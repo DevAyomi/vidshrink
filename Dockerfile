@@ -20,7 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libssl3 
 COPY --from=builder /usr/src/app/target/release/vidshrink /app/vidshrink
 RUN chmod +x /app/vidshrink
 
-# Railway injects PORT at runtime — don't hardcode it
+# Railway injects PORT at runtime — this is just a fallback default
+ENV PORT=8080
 EXPOSE 8080
 
-CMD ["/app/vidshrink", "--server"]
+# Use shell form so stderr (crash messages) appears in Railway deploy logs
+CMD /app/vidshrink --server 2>&1

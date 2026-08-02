@@ -48,7 +48,10 @@ fn check_tool_available(name: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    eprintln!("[vidshrink] process started");
     let args = Args::parse();
+    eprintln!("[vidshrink] args parsed, server={}", args.server);
+
     if let Err(e) = check_tool_available("ffmpeg") {
         eprintln!("⚠️ Warning: {}", e);
     }
@@ -62,6 +65,7 @@ fn main() -> Result<()> {
             .ok()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or(args.port);
+        eprintln!("[vidshrink] starting server on port {}", port);
         let rt = tokio::runtime::Runtime::new()?;
         return rt.block_on(server::start_server(port));
     }
