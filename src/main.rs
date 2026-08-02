@@ -54,12 +54,22 @@ fn main() -> Result<()> {
 
     // If server mode or no input file specified, run HTTP API server
     if args.server || args.input.is_none() {
-        let port = std::env::var("PORT")
+        let env_port = std::env::var("PORT")
             .ok()
-            .and_then(|p| p.parse::<u16>().ok())
-            .unwrap_or(args.port);
+            .and_then(|p| p.parse::<u16>().ok());
+        let port = env_port.unwrap_or(args.port);
         let rt = tokio::runtime::Runtime::new()?;
-        return rt.block_on(server::start_server(port));
+        return rt.block_on(async {
+            if let Some(p) = env_port {
+                if p != 8080 {
+                    tokio::spawn(async move {
+                        println!("🚀 Binding secondary listener on port 8080");
+                        let _ = server::start_server(8080).await;
+                    });
+                }
+            }
+            server::start_server(port).await
+        });
     }
 
     let input_path = args.input.unwrap();
