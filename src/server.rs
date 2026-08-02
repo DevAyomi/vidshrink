@@ -9,6 +9,7 @@ use axum::{
   Router,
 };
 use serde::Serialize;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tower_http::cors::CorsLayer;
@@ -40,6 +41,7 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
 
   let addr = SocketAddr::from(([0, 0, 0, 0], port));
   println!("🚀 VidShrink Rust Server running at http://{}", addr);
+  let _ = std::io::stdout().flush();
 
   let listener = tokio::net::TcpListener::bind(addr).await?;
   axum::serve(listener, app).await?;
@@ -225,5 +227,16 @@ async fn handle_download(Path(filename): Path<String>) -> Response {
 }
 
 async fn handle_health() -> impl IntoResponse {
-  (StatusCode::OK, "VidShrink Rust Engine API is Online!")
+  #[derive(Serialize)]
+  struct HealthStatus {
+    status: &'static str,
+    message: &'static str,
+  }
+  (
+    StatusCode::OK,
+    Json(HealthStatus {
+      status: "ok",
+      message: "VidShrink Rust Engine API is Online!",
+    }),
+  )
 }
