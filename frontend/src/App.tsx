@@ -507,10 +507,10 @@ export function App() {
                 onMouseMove={handleMouseMove}
               >
                 {/* Floating BEFORE & AFTER Badges */}
-                <div className="split-badge badge-before">◀ BEFORE (Original)</div>
                 <div className="split-badge badge-after">
-                  {compressedVideoUrl ? 'AFTER (Real FFmpeg Output) ▶' : 'AFTER (Preview Filter) ▶'}
+                  {compressedVideoUrl ? '◀ AFTER (Real FFmpeg Output)' : '◀ AFTER (Preview Filter)'}
                 </div>
+                <div className="split-badge badge-before">BEFORE (Original) ▶</div>
 
                 {/* Original HTML5 Video */}
                 <video
@@ -551,9 +551,9 @@ export function App() {
                   style={{ left: `${splitPos}%` }}
                 >
                   <div className="split-handle-btn">
-                    <span className="handle-label handle-label-before">BEFORE</span>
-                    ‹ ›
                     <span className="handle-label handle-label-after">AFTER</span>
+                    ‹ ›
+                    <span className="handle-label handle-label-before">BEFORE</span>
                   </div>
                 </div>
 
