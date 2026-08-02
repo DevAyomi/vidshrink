@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
 # Copy compiled binary from builder
 COPY --from=builder /usr/src/app/target/release/vidshrink /app/vidshrink
 
+ENV PORT=8080
 EXPOSE 8080
 
 CMD ["/app/vidshrink", "--server"]
