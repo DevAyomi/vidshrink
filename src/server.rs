@@ -11,7 +11,7 @@ use axum::{
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -28,12 +28,11 @@ pub struct CompressResponse {
 }
 
 pub async fn start_server(port: u16) -> anyhow::Result<()> {
-  let cors = CorsLayer::new()
-    .allow_origin(Any)
-    .allow_methods(Any)
-    .allow_headers(Any);
+  let cors = CorsLayer::permissive();
 
   let app = Router::new()
+    .route("/", get(handle_health))
+    .route("/health", get(handle_health))
     .route("/api/compress", post(handle_compress))
     .route("/api/downloads/:filename", get(handle_download))
     .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5 GB body limit for video uploads!
@@ -223,4 +222,8 @@ async fn handle_download(Path(filename): Path<String>) -> Response {
     )
       .into_response(),
   }
+}
+
+async fn handle_health() -> impl IntoResponse {
+  (StatusCode::OK, "VidShrink Rust Engine API is Online!")
 }

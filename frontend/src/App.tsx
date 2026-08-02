@@ -32,7 +32,16 @@ const RESOLUTIONS: VideoPreset[] = [
   { name: '854×480 (480p SD)', width: 854, height: 480 },
 ];
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL as string || 'http://127.0.0.1:8080').replace(/\/$/, '');
+const getApiBaseUrl = () => {
+  let envUrl = (import.meta.env.VITE_API_URL as string || '').trim();
+  if (!envUrl) return 'http://127.0.0.1:8080';
+  if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
+    envUrl = `https://${envUrl}`;
+  }
+  return envUrl.replace(/\/$/, '');
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export function App() {
   // Video & File state
