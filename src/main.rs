@@ -49,8 +49,12 @@ fn check_tool_available(name: &str) -> Result<()> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    check_tool_available("ffmpeg")?;
-    check_tool_available("ffprobe")?;
+    if let Err(e) = check_tool_available("ffmpeg") {
+        eprintln!("⚠️ Warning: {}", e);
+    }
+    if let Err(e) = check_tool_available("ffprobe") {
+        eprintln!("⚠️ Warning: {}", e);
+    }
 
     // If server mode or no input file specified, run HTTP API server
     if args.server || args.input.is_none() {
