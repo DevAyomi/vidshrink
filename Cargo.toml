@@ -1,0 +1,25 @@
+[package]
+name = "vidshrink"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vidshrink"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.4.18", features = ["derive"] }
+anyhow = "1.0.75"
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+regex = "1.10.2"
+indicatif = "0.17.7"
+colored = "2.1.0"
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.7", features = ["multipart"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+tempfile = "3.8"
+
+[profile.release]
+opt-level = 3
+lto = true
