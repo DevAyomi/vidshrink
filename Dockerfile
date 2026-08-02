@@ -1,8 +1,8 @@
 # Multi-stage build for Rust VidShrink server with FFmpeg
-FROM rust:1.80-slim as builder
+FROM rust:1-slim AS builder
 WORKDIR /usr/src/app
 
-# Install build dependencies without bloated recommend packages
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
@@ -13,7 +13,7 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 WORKDIR /app
 
-# Install lightweight runtime dependencies: FFmpeg, FFprobe, and CA certificates
+# Install runtime dependencies: FFmpeg, FFprobe, and CA certificates
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binary from builder
