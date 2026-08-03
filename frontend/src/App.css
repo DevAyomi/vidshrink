@@ -117,7 +117,8 @@
 
 @media (max-width: 1100px) {
   .app-body {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column-reverse;
     padding: 24px 20px;
     gap: 24px;
   }
