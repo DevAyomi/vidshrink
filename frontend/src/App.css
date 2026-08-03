@@ -1058,14 +1058,14 @@
     height: auto;
     padding: 12px 16px;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     align-items: stretch;
   }
 
   .header-left {
     justify-content: space-between;
     width: 100%;
-    gap: 12px;
+    gap: 8px;
   }
 
   .header-right {
@@ -1076,12 +1076,21 @@
   }
 
   .brand-logo {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .app-body {
-    padding: 16px 12px 32px 12px;
-    gap: 20px;
+    padding: 12px 12px 28px 12px;
+    gap: 16px;
+  }
+
+  .options-panel, .preview-card {
+    width: 100%;
+  }
+
+  .split-view-container {
+    height: 280px; /* Scaled down for mobile screens */
+    border-radius: 12px;
   }
 
   .options-title {
@@ -1090,7 +1099,7 @@
 
   .info-stats-row {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     align-items: stretch;
   }
 
@@ -1099,13 +1108,13 @@
   }
 
   .player-controls-bar {
-    padding: 10px 12px;
-    gap: 10px;
+    padding: 8px 12px;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
   .player-seek-track {
-    min-width: 120px;
+    min-width: 80px;
   }
 
   .stats-grid {
@@ -1124,43 +1133,67 @@
   }
 
   .upload-dropzone {
-    padding: 32px 16px;
+    padding: 28px 14px;
+    min-height: 260px;
   }
 
   .upload-headline {
-    font-size: 18px;
+    font-size: 17px;
+  }
+  
+  .upload-subtext {
+    font-size: 13px;
+  }
+
+  .edit-video-badge {
+    bottom: 12px;
+    padding: 6px 14px;
+    font-size: 12px;
   }
 }
 
 @media (max-width: 480px) {
+  .brand-logo {
+    font-size: 16px;
+  }
+
   .brand-badge {
     font-size: 9px;
     padding: 2px 6px;
   }
 
   .btn-admin {
-    font-size: 12px;
-    padding: 6px 12px;
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  .split-view-container {
+    height: 220px;
   }
 
   .summary-size-main {
-    font-size: 28px;
+    font-size: 24px;
   }
 
   .split-badge {
-    font-size: 10px;
-    padding: 4px 8px;
+    font-size: 9px;
+    padding: 3px 6px;
   }
 
   .badge-after {
-    left: 10px;
-    top: 10px;
+    right: 6px;
+    top: 6px;
   }
 
   .badge-before {
-    right: 10px;
-    top: 10px;
+    left: 6px;
+    top: 6px;
+  }
+
+  .setting-card {
+    padding: 14px 16px;
   }
 }
+
 
 
