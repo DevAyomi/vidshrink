@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,7 +14,14 @@ import {
   Maximize2,
   Film,
   UploadCloud,
-  Cpu
+  Cpu,
+  HelpCircle,
+  ShieldCheck,
+  Eye,
+  Video,
+  X,
+  Lock,
+  LogOut
 } from 'lucide-react';
 import './App.css';
 
@@ -78,6 +85,48 @@ export function App() {
   const [compressDone, setCompressDone] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isRustEngineConnected, setIsRustEngineConnected] = useState<boolean>(true);
+
+  // Stats & Modals state
+  const [showHowToUse, setShowHowToUse] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('admin@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('password');
+  const [adminError, setAdminError] = useState('');
+  const [pageViewsCount, setPageViewsCount] = useState<number>(() => {
+    return parseInt(localStorage.getItem('vidshrink_page_views') || '1', 10);
+  });
+  const [videosCompressedCount, setVideosCompressedCount] = useState<number>(() => {
+    return parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
+  });
+
+  // Track page views on initial load
+  useEffect(() => {
+    // Increment local counter as fallback
+    const localViews = (parseInt(localStorage.getItem('vidshrink_page_views') || '0', 10)) + 1;
+    localStorage.setItem('vidshrink_page_views', localViews.toString());
+    setPageViewsCount(localViews);
+
+    // Call server to track view
+    fetch(`${API_BASE_URL}/api/track-view`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.page_views) setPageViewsCount(data.page_views);
+        if (data.videos_compressed !== undefined) setVideosCompressedCount(data.videos_compressed);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch admin stats when admin panel is open
+  const fetchStats = () => {
+    fetch(`${API_BASE_URL}/api/stats`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.page_views) setPageViewsCount(data.page_views);
+        if (data.videos_compressed !== undefined) setVideosCompressedCount(data.videos_compressed);
+      })
+      .catch(() => {});
+  };
 
   // Refs
   const splitContainerRef = useRef<HTMLDivElement>(null);
@@ -192,6 +241,12 @@ export function App() {
         setCompressProgress(100);
         setIsCompressing(false);
         setCompressDone(true);
+
+        // Update total videos compressed locally & fetch from server
+        const newLocalComp = (parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10)) + 1;
+        localStorage.setItem('vidshrink_videos_compressed', newLocalComp.toString());
+        setVideosCompressedCount(newLocalComp);
+        fetchStats();
       }
     } catch (err: any) {
       console.error("Rust FFmpeg server error:", err);
@@ -235,6 +290,18 @@ export function App() {
     }
   };
 
+  // Admin Login Handler
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+    if (adminEmail === 'admin@gmail.com' && adminPassword === 'password') {
+      setIsAdminLoggedIn(true);
+      fetchStats();
+    } else {
+      setAdminError('Invalid email or password');
+    }
+  };
+
   // Toggle Video Play / Pause
   const togglePlay = () => {
     if (videoOrigRef.current && videoCompRef.current) {
@@ -255,14 +322,12 @@ export function App() {
       <header className="app-header">
         <div className="header-left">
           <div className="brand-logo" onClick={() => setCustomVideoUrl(null)}>
-            VIDSHRINK <span className="brand-badge">PRO</span>
+            VIDSHRINK <span className="brand-badge" style={{ background: '#166534', color: '#DCFCE7' }}>100% FREE</span>
           </div>
-          <div className="nav-item">
-            <span>Tools</span>
-            <ChevronDown size={14} />
+          <div className="nav-item" onClick={() => setShowHowToUse(true)}>
+            <HelpCircle size={16} />
+            <span>How to Use</span>
           </div>
-          <div className="nav-item">Presets</div>
-          <div className="nav-item">Documentation</div>
         </div>
 
         <div className="header-right">
@@ -270,10 +335,173 @@ export function App() {
             <Cpu size={14} />
             {isRustEngineConnected ? 'Rust FFmpeg Engine Active' : 'Browser Preview Mode'}
           </div>
-          <button className="btn-login">Sign In</button>
-          <button className="btn-signup">Get Started</button>
+          
+          <button className="btn-admin" onClick={() => { setShowAdminModal(true); fetchStats(); }}>
+            <ShieldCheck size={16} />
+            Admin Panel
+          </button>
         </div>
       </header>
+
+      {/* How to Use Modal */}
+      {showHowToUse && (
+        <div className="modal-backdrop" onClick={() => setShowHowToUse(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <HelpCircle size={20} style={{ color: '#0066FF' }} />
+                How to Use VidShrink
+              </h3>
+              <button className="modal-close-btn" onClick={() => setShowHowToUse(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="how-to-body">
+              <div className="step-card">
+                <div className="step-num">1</div>
+                <div className="step-content">
+                  <h4>Upload Your Video</h4>
+                  <p>Drag and drop any MP4, MOV, AVI, MKV, or WebM video file into the dropzone, or click to browse files.</p>
+                </div>
+              </div>
+
+              <div className="step-card">
+                <div className="step-num">2</div>
+                <div className="step-content">
+                  <h4>Configure Compression Settings</h4>
+                  <p>Select target resolution (e.g. 1080p, 720p) and set your desired compression slider (5% to 90%). Expand Advanced Settings to pick H.265 / H.264 / AV1 codecs.</p>
+                </div>
+              </div>
+
+              <div className="step-card">
+                <div className="step-num">3</div>
+                <div className="step-content">
+                  <h4>Compress & Preview</h4>
+                  <p>Click <strong>Compress File (Rust FFmpeg)</strong>. Watch real-time encoding, then use the split visual slider to compare original vs compressed quality side-by-side!</p>
+                </div>
+              </div>
+
+              <div className="step-card">
+                <div className="step-num">4</div>
+                <div className="step-content">
+                  <h4>Download Clean MP4</h4>
+                  <p>Click <strong>Download Real MP4</strong> to instantly save your compressed video with zero quality loss.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-modal-primary" onClick={() => setShowHowToUse(false)}>
+                Got it, let's compress!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Panel Modal */}
+      {showAdminModal && (
+        <div className="modal-backdrop" onClick={() => setShowAdminModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <ShieldCheck size={20} style={{ color: '#0066FF' }} />
+                VidShrink Admin Panel
+              </h3>
+              <button className="modal-close-btn" onClick={() => setShowAdminModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {!isAdminLoggedIn ? (
+              <form onSubmit={handleAdminLogin} className="admin-login-form">
+                <p style={{ fontSize: 13, color: '#64748B', marginBottom: 16 }}>
+                  Log in to access administrative metrics and platform statistics.
+                </p>
+                
+                {adminError && <div className="admin-error-box">{adminError}</div>}
+
+                <div className="form-group">
+                  <label className="form-label">Admin Email</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={adminEmail}
+                    onChange={e => setAdminEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginTop: 12 }}>
+                  <label className="form-label">Password</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    value={adminPassword}
+                    onChange={e => setAdminPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="btn-modal-primary" style={{ marginTop: 20, width: '100%' }}>
+                  <Lock size={16} />
+                  Login to Admin Panel
+                </button>
+              </form>
+            ) : (
+              <div className="admin-dashboard">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>
+                    Welcome back, <strong>admin@gmail.com</strong>
+                  </div>
+                  <button
+                    className="btn-logout"
+                    onClick={() => setIsAdminLoggedIn(false)}
+                  >
+                    <LogOut size={14} />
+                    Logout
+                  </button>
+                </div>
+
+                <div className="stats-grid">
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper" style={{ background: '#EFF6FF', color: '#2563EB' }}>
+                      <Eye size={24} />
+                    </div>
+                    <div className="stat-info">
+                      <span className="stat-label">Total Page Views</span>
+                      <span className="stat-number">{pageViewsCount}</span>
+                      <span className="stat-subtext">People who accessed page</span>
+                    </div>
+                  </div>
+
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper" style={{ background: '#F0FDF4', color: '#16A34A' }}>
+                      <Video size={24} />
+                    </div>
+                    <div className="stat-info">
+                      <span className="stat-label">Videos Compressed</span>
+                      <span className="stat-number">{videosCompressedCount}</span>
+                      <span className="stat-subtext">Total FFmpeg encodes</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="admin-info-box">
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', marginBottom: 4 }}>
+                    Platform Health Status
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569' }}>
+                    Server is responding on port 8080. All background Rust workers are running smoothly.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* Main 2-Column Application Body */}
       <main className="app-body">

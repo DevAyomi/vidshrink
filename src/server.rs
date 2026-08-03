@@ -8,13 +8,15 @@ use axum::{
   routing::{get, post},
   Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tower_http::cors::CorsLayer;
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
+static PAGE_VIEWS: AtomicU64 = AtomicU64::new(1);
+static VIDEOS_COMPRESSED: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Serialize)]
 pub struct CompressResponse {
@@ -28,12 +30,34 @@ pub struct CompressResponse {
   pub height: u32,
 }
 
+#[derive(Deserialize)]
+pub struct AdminLoginRequest {
+  pub email: String,
+  pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct AdminLoginResponse {
+  pub success: bool,
+  pub token: Option<String>,
+  pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct StatsResponse {
+  pub page_views: u64,
+  pub videos_compressed: u64,
+}
+
 pub async fn start_server(port: u16) -> anyhow::Result<()> {
   let cors = CorsLayer::permissive();
 
   let app = Router::new()
     .route("/", get(handle_health))
     .route("/health", get(handle_health))
+    .route("/api/track-view", post(handle_track_view))
+    .route("/api/stats", get(handle_get_stats))
+    .route("/api/admin/login", post(handle_admin_login))
     .route("/api/compress", post(handle_compress))
     .route("/api/downloads/:filename", get(handle_download))
     .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5 GB body limit for video uploads!
@@ -46,6 +70,40 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
   let listener = tokio::net::TcpListener::bind(addr).await?;
   axum::serve(listener, app).await?;
   Ok(())
+}
+
+async fn handle_track_view() -> impl IntoResponse {
+  let views = PAGE_VIEWS.fetch_add(1, Ordering::SeqCst) + 1;
+  let compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+  Json(StatsResponse {
+    page_views: views,
+    videos_compressed: compressed,
+  })
+}
+
+async fn handle_get_stats() -> impl IntoResponse {
+  let views = PAGE_VIEWS.load(Ordering::SeqCst);
+  let compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+  Json(StatsResponse {
+    page_views: views,
+    videos_compressed: compressed,
+  })
+}
+
+async fn handle_admin_login(Json(payload): Json<AdminLoginRequest>) -> impl IntoResponse {
+  if payload.email == "admin@gmail.com" && payload.password == "password" {
+    Json(AdminLoginResponse {
+      success: true,
+      token: Some("vidshrink-admin-secret-token".into()),
+      message: "Login successful".into(),
+    })
+  } else {
+    Json(AdminLoginResponse {
+      success: false,
+      token: None,
+      message: "Invalid email or password".into(),
+    })
+  }
 }
 
 async fn handle_compress(mut multipart: Multipart) -> Response {
@@ -175,6 +233,8 @@ async fn handle_compress(mut multipart: Multipart) -> Response {
       .into_response();
   }
 
+  VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst);
+
   let output_info = probe::probe(&output_path).unwrap_or(source_info.clone());
   let original_size = source_info.size_bytes;
   let compressed_size = output_info.size_bytes;
@@ -240,3 +300,4 @@ async fn handle_health() -> impl IntoResponse {
     }),
   )
 }
+
