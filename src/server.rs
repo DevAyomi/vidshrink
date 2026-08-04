@@ -18,6 +18,33 @@ static COUNTER: AtomicU64 = AtomicU64::new(1);
 static PAGE_VIEWS: AtomicU64 = AtomicU64::new(1);
 static VIDEOS_COMPRESSED: AtomicU64 = AtomicU64::new(0);
 
+const STATS_FILE: &str = "vidshrink_stats.json";
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PersistentStats {
+  page_views: u64,
+  videos_compressed: u64,
+}
+
+fn load_persistent_stats() -> (u64, u64) {
+  if let Ok(content) = std::fs::read_to_string(STATS_FILE) {
+    if let Ok(stats) = serde_json::from_str::<PersistentStats>(&content) {
+      return (stats.page_views, stats.videos_compressed);
+    }
+  }
+  (1, 0)
+}
+
+fn save_persistent_stats(page_views: u64, videos_compressed: u64) {
+  let stats = PersistentStats {
+    page_views,
+    videos_compressed,
+  };
+  if let Ok(json) = serde_json::to_string_pretty(&stats) {
+    let _ = std::fs::write(STATS_FILE, json);
+  }
+}
+
 #[derive(Serialize)]
 pub struct CompressResponse {
   pub success: bool,
@@ -50,6 +77,10 @@ pub struct StatsResponse {
 }
 
 pub async fn start_server(port: u16) -> anyhow::Result<()> {
+  let (initial_views, initial_compressed) = load_persistent_stats();
+  PAGE_VIEWS.store(initial_views, Ordering::SeqCst);
+  VIDEOS_COMPRESSED.store(initial_compressed, Ordering::SeqCst);
+
   let cors = CorsLayer::permissive();
 
   let app = Router::new()
@@ -75,6 +106,7 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
 async fn handle_track_view() -> impl IntoResponse {
   let views = PAGE_VIEWS.fetch_add(1, Ordering::SeqCst) + 1;
   let compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+  save_persistent_stats(views, compressed);
   Json(StatsResponse {
     page_views: views,
     videos_compressed: compressed,
@@ -233,7 +265,9 @@ async fn handle_compress(mut multipart: Multipart) -> Response {
       .into_response();
   }
 
-  VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst);
+  let comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
+  let view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+  save_persistent_stats(view_count, comp_count);
 
   let output_info = probe::probe(&output_path).unwrap_or(source_info.clone());
   let original_size = source_info.size_bytes;
