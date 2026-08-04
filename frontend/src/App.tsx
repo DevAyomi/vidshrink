@@ -90,8 +90,8 @@ export function App() {
   const [showHowToUse, setShowHowToUse] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('admin@gmail.com');
-  const [adminPassword, setAdminPassword] = useState('password');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [pageViewsCount, setPageViewsCount] = useState<number>(() => {
     return parseInt(localStorage.getItem('vidshrink_page_views') || '1', 10);
@@ -100,8 +100,13 @@ export function App() {
     return parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
   });
 
-  // Track page views on initial load
+  // Track page views on initial load & handle /admin route
   useEffect(() => {
+    if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
+      setShowAdminModal(true);
+      fetchStats();
+    }
+
     // Increment local counter as fallback
     const localViews = (parseInt(localStorage.getItem('vidshrink_page_views') || '0', 10)) + 1;
     localStorage.setItem('vidshrink_page_views', localViews.toString());
@@ -335,11 +340,6 @@ export function App() {
             <Cpu size={14} />
             {isRustEngineConnected ? 'Rust FFmpeg Engine Active' : 'Browser Preview Mode'}
           </div>
-          
-          <button className="btn-admin" onClick={() => { setShowAdminModal(true); fetchStats(); }}>
-            <ShieldCheck size={16} />
-            Admin Panel
-          </button>
         </div>
       </header>
 
