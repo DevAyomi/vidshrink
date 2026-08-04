@@ -1113,6 +1113,107 @@
   padding: 14px 16px;
 }
 
+/* Mobile Step Wizard (Hidden on desktop) */
+.mobile-step-wizard {
+  display: none;
+}
+
+/* Thank You Card */
+.thank-you-card {
+  background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
+  border: 1px solid #BBF7D0;
+  border-radius: 16px;
+  padding: 24px 20px;
+  text-align: center;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(22, 101, 52, 0.08);
+}
+
+.thank-you-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.thank-you-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.thank-you-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #14532D;
+  margin: 4px 0 0 0;
+}
+
+.thank-you-subtext {
+  font-size: 13px;
+  color: #166534;
+  margin: 0;
+}
+
+.savings-tag {
+  color: #15803D;
+}
+
+.thank-you-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.btn-download-primary {
+  width: 100%;
+  height: 50px;
+  background: linear-gradient(135deg, #16A34A, #15803D);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.btn-download-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-reset-step {
+  width: 100%;
+  height: 44px;
+  background: #FFFFFF;
+  color: #334155;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-reset-step:hover {
+  background: #F8FAFC;
+}
+
 /* Mobile Floating Action Bar (Hidden on desktop) */
 .mobile-sticky-bar {
   display: none;
@@ -1148,8 +1249,99 @@
   .app-body {
     display: flex;
     flex-direction: column;
-    padding: 12px 12px 90px 12px; /* Extra bottom space for mobile sticky bar */
+    padding: 12px 12px 90px 12px;
     gap: 16px;
+  }
+
+  /* Mobile Step Wizard */
+  .mobile-step-wizard {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    padding: 10px 14px;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  .wizard-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: all 0.2s ease;
+  }
+
+  .wizard-step.active {
+    opacity: 1;
+    font-weight: 700;
+    color: #0066FF;
+  }
+
+  .wizard-step.completed {
+    opacity: 1;
+    color: #166534;
+  }
+
+  .wizard-step .step-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    background: #F1F5F9;
+    color: #64748B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .wizard-step.active .step-badge {
+    background: #0066FF;
+    color: #FFFFFF;
+  }
+
+  .wizard-step.completed .step-badge {
+    background: #DCFCE7;
+    color: #166534;
+  }
+
+  .step-label {
+    font-size: 12px;
+  }
+
+  .wizard-line {
+    flex: 1;
+    height: 2px;
+    background: #E2E8F0;
+    margin: 0 6px;
+  }
+
+  /* Mobile Step Switching Rules */
+  .app-body.mobile-step-1 .options-panel {
+    display: none !important;
+  }
+
+  .app-body.mobile-step-1 .preview-card {
+    display: block !important;
+  }
+
+  .app-body.mobile-step-2 .options-panel {
+    display: block !important;
+  }
+
+  .app-body.mobile-step-2 .preview-card {
+    display: none !important;
+  }
+
+  .app-body.mobile-step-3 .options-panel {
+    display: none !important;
+  }
+
+  .app-body.mobile-step-3 .preview-card {
+    display: block !important;
   }
 
   /* Reorder panels on mobile: Video upload/preview first, compression options second */

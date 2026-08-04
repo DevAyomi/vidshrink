@@ -81,6 +81,7 @@ export function App() {
   const [currentTime, setCurrentTime] = useState(0);
 
   // Processing & Engine state
+  const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressProgress, setCompressProgress] = useState(0);
   const [compressDone, setCompressDone] = useState(false);
@@ -167,6 +168,17 @@ export function App() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Reset to Step 1 for another video
+  const handleResetAll = () => {
+    setCustomVideoUrl(null);
+    setCompressedVideoUrl(null);
+    setActualCompressedBytes(null);
+    setSelectedFileObj(null);
+    setCompressDone(false);
+    setIsCompressing(false);
+    setMobileStep(1);
+  };
+
   // Handle File Selection
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith('video/')) {
@@ -182,6 +194,7 @@ export function App() {
     setActualCompressedBytes(null);
     setCompressDone(false);
     setIsPlaying(true);
+    setMobileStep(2); // Auto-advance to Step 2: Presets on mobile
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -209,6 +222,7 @@ export function App() {
       return;
     }
 
+    setMobileStep(3); // Advance to Step 3: Compress & Download on mobile
     setIsCompressing(true);
     setCompressProgress(15);
     setCompressDone(false);
@@ -518,9 +532,36 @@ export function App() {
       )}
 
 
-      {/* Main 2-Column Application Body */}
-      <main className="app-body">
-        {/* Left Column: Compression Options */}
+      {/* Main Application Body */}
+      <main className={`app-body mobile-step-${mobileStep}`}>
+        {/* Mobile Step Wizard Navigation */}
+        <div className="mobile-step-wizard">
+          <div
+            className={`wizard-step ${mobileStep === 1 ? 'active' : ''} ${mobileStep > 1 ? 'completed' : ''}`}
+            onClick={() => setMobileStep(1)}
+          >
+            <div className="step-badge">{mobileStep > 1 ? <Check size={12} /> : '1'}</div>
+            <span className="step-label">1. Select</span>
+          </div>
+          <div className="wizard-line" />
+          <div
+            className={`wizard-step ${mobileStep === 2 ? 'active' : ''} ${mobileStep > 2 ? 'completed' : ''}`}
+            onClick={() => { if (customVideoUrl) setMobileStep(2); }}
+          >
+            <div className="step-badge">{mobileStep > 2 ? <Check size={12} /> : '2'}</div>
+            <span className="step-label">2. Presets</span>
+          </div>
+          <div className="wizard-line" />
+          <div
+            className={`wizard-step ${mobileStep === 3 ? 'active' : ''}`}
+            onClick={() => { if (isCompressing || compressDone) setMobileStep(3); }}
+          >
+            <div className="step-badge">3</div>
+            <span className="step-label">3. Download</span>
+          </div>
+        </div>
+
+        {/* Left Column: Compression Options (Step 2) */}
         <section className="options-panel">
           <h2 className="options-title">
             <ChevronLeft size={24} className="options-title-icon" onClick={() => setCustomVideoUrl(null)} />
@@ -698,17 +739,34 @@ export function App() {
           />
 
           {compressDone && (
-            <div className="success-overlay">
-              <Sparkles size={18} style={{ color: '#166534' }} />
-              <span className="success-text">
-                Real FFmpeg video output ready ({calculatedReducedSizeMB}MB)!
-              </span>
-              <button
-                onClick={handleDownloadCompressed}
-                className="btn-download-success"
-              >
-                Download Real MP4
-              </button>
+            <div className="thank-you-card">
+              <div className="thank-you-header">
+                <div className="thank-you-badge">
+                  <Sparkles size={24} style={{ color: '#166534' }} />
+                </div>
+                <h3 className="thank-you-title">🎉 Thank You! Video Ready</h3>
+                <p className="thank-you-subtext">
+                  Reduced from <strong>{originalSizeMB} MB</strong> to <strong>{calculatedReducedSizeMB} MB</strong>
+                  <span className="savings-tag font-bold"> ({compressionPct}% saved)</span>
+                </p>
+              </div>
+
+              <div className="thank-you-actions">
+                <button
+                  onClick={handleDownloadCompressed}
+                  className="btn-download-primary"
+                >
+                  <Sparkles size={18} />
+                  Download Real MP4 ({calculatedReducedSizeMB}MB)
+                </button>
+                <button
+                  onClick={handleResetAll}
+                  className="btn-reset-step"
+                >
+                  <RotateCw size={14} />
+                  Compress Another Video
+                </button>
+              </div>
             </div>
           )}
         </section>
@@ -892,18 +950,18 @@ export function App() {
 
       {/* Floating Mobile Bottom Action Bar (Visible on Mobile Screens) */}
       <div className="mobile-sticky-bar">
-        {!customVideoUrl ? (
+        {mobileStep === 1 || !customVideoUrl ? (
           <button
             className="mobile-action-btn primary"
             onClick={() => fileInputRef.current?.click()}
           >
             <UploadCloud size={20} />
-            <span>Step 1: Select Video to Compress</span>
+            <span>Step 1: Select Video File</span>
           </button>
         ) : isCompressing ? (
           <button className="mobile-action-btn processing" disabled>
             <RotateCw size={20} className="animate-spin-fast" />
-            <span>Encoding ({compressProgress}%)...</span>
+            <span>Step 3: Encoding ({compressProgress}%)...</span>
           </button>
         ) : compressDone ? (
           <button
@@ -911,7 +969,7 @@ export function App() {
             onClick={handleDownloadCompressed}
           >
             <Sparkles size={20} />
-            <span>Download Real MP4 ({calculatedReducedSizeMB}MB)</span>
+            <span>Step 3: Download Real MP4 ({calculatedReducedSizeMB}MB)</span>
           </button>
         ) : (
           <button
@@ -919,7 +977,7 @@ export function App() {
             onClick={handleStartCompression}
           >
             <Zap size={20} />
-            <span>Compress Video Now ({compressionPct}% Smaller)</span>
+            <span>Step 2: Compress Video Now ({compressionPct}% Saved)</span>
           </button>
         )}
       </div>
