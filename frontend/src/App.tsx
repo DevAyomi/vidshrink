@@ -493,7 +493,9 @@ export function App() {
                     Platform Health Status
                   </div>
                   <div style={{ fontSize: 12, color: '#475569' }}>
-                    Server is responding on port 8080. All background Rust workers are running smoothly.
+                    {isRustEngineConnected
+                      ? 'Server is responding. All background Rust workers are running smoothly.'
+                      : 'Rust server unreachable. Operating in browser preview mode.'}
                   </div>
                 </div>
               </div>
