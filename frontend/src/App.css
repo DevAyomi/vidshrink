@@ -781,6 +781,67 @@
   font-weight: 700;
 }
 
+/* Header Credibility Pill */
+.header-credibility-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  color: #475569;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.cred-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cred-item strong {
+  color: #0F172A;
+  font-weight: 700;
+}
+
+.cred-dot {
+  color: #94A3B8;
+  font-size: 10px;
+}
+
+/* Dropzone Credibility Bar */
+.dropzone-credibility-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 10px 20px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.cred-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cred-stat-item strong {
+  color: #0F172A;
+  font-weight: 700;
+}
+
+.cred-stat-divider {
+  color: #CBD5E1;
+  font-weight: 300;
+}
+
 /* Admin Button in Header */
 .btn-admin {
   display: flex;

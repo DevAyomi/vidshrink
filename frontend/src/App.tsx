@@ -336,6 +336,18 @@ export function App() {
           </div>
         </div>
 
+        <div className="header-credibility-pill">
+          <div className="cred-item">
+            <Eye size={14} style={{ color: '#0066FF' }} />
+            <span><strong>{pageViewsCount.toLocaleString()}</strong> Visitors</span>
+          </div>
+          <span className="cred-dot">•</span>
+          <div className="cred-item">
+            <Video size={14} style={{ color: '#16A34A' }} />
+            <span><strong>{videosCompressedCount.toLocaleString()}</strong> Compressed</span>
+          </div>
+        </div>
+
         <div className="header-right">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: isRustEngineConnected ? '#166534' : '#9A3412', background: isRustEngineConnected ? '#F0FDF4' : '#FFEDD5', padding: '4px 10px', borderRadius: 9999, border: `1px solid ${isRustEngineConnected ? '#BBF7D0' : '#FED7AA'}` }}>
             <Cpu size={14} />
@@ -719,6 +731,20 @@ export function App() {
               <div className="upload-subtext">
                 Drag and drop your video file here, or click to browse from your computer.
               </div>
+
+              {/* Social Proof Credibility Metrics */}
+              <div className="dropzone-credibility-bar">
+                <div className="cred-stat-item">
+                  <Eye size={15} style={{ color: '#0066FF' }} />
+                  <span><strong>{pageViewsCount.toLocaleString()}</strong> Page Visitors</span>
+                </div>
+                <div className="cred-stat-divider">|</div>
+                <div className="cred-stat-item">
+                  <Video size={15} style={{ color: '#16A34A' }} />
+                  <span><strong>{videosCompressedCount.toLocaleString()}</strong> Videos Compressed</span>
+                </div>
+              </div>
+
               <button className="btn-select-file">
                 Select Video File
               </button>
