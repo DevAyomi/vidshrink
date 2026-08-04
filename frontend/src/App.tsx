@@ -21,7 +21,8 @@ import {
   Video,
   X,
   Lock,
-  LogOut
+  LogOut,
+  Zap
 } from 'lucide-react';
 import './App.css';
 
@@ -862,6 +863,40 @@ export function App() {
           )}
         </section>
       </main>
+
+      {/* Floating Mobile Bottom Action Bar (Visible on Mobile Screens) */}
+      <div className="mobile-sticky-bar">
+        {!customVideoUrl ? (
+          <button
+            className="mobile-action-btn primary"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <UploadCloud size={20} />
+            <span>Step 1: Select Video to Compress</span>
+          </button>
+        ) : isCompressing ? (
+          <button className="mobile-action-btn processing" disabled>
+            <RotateCw size={20} className="animate-spin-fast" />
+            <span>Encoding ({compressProgress}%)...</span>
+          </button>
+        ) : compressDone ? (
+          <button
+            className="mobile-action-btn success"
+            onClick={handleDownloadCompressed}
+          >
+            <Sparkles size={20} />
+            <span>Download Real MP4 ({calculatedReducedSizeMB}MB)</span>
+          </button>
+        ) : (
+          <button
+            className="mobile-action-btn compress-now"
+            onClick={handleStartCompression}
+          >
+            <Zap size={20} />
+            <span>Compress Video Now ({compressionPct}% Smaller)</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
