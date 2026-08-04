@@ -102,12 +102,29 @@ export function App() {
     return parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
   });
 
-  // Track page views on initial load & handle /admin route
+  // Track page views on initial load & handle /admin route & restore saved result
   useEffect(() => {
     if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
       setShowAdminModal(true);
       fetchStats();
     }
+
+    // Restore saved compressed video result if refreshing page
+    try {
+      const savedResultStr = sessionStorage.getItem('vidshrink_saved_result');
+      if (savedResultStr) {
+        const saved = JSON.parse(savedResultStr);
+        if (saved.url) {
+          setCompressedVideoUrl(saved.url);
+          setCustomVideoUrl(saved.url);
+          setFileName(saved.fileName || 'compressed_video.mp4');
+          setOriginalSizeBytes(saved.origSize || 0);
+          setActualCompressedBytes(saved.compSize || 0);
+          setCompressDone(true);
+          setMobileStep(3);
+        }
+      }
+    } catch (e) {}
 
     // Increment local counter as fallback
     const localViews = (parseInt(localStorage.getItem('vidshrink_page_views') || '0', 10)) + 1;
@@ -119,7 +136,12 @@ export function App() {
       .then(res => res.json())
       .then(data => {
         if (data.page_views) setPageViewsCount(data.page_views);
-        if (data.videos_compressed !== undefined) setVideosCompressedCount(data.videos_compressed);
+        if (data.videos_compressed !== undefined) {
+          const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
+          const maxComp = Math.max(localComp, data.videos_compressed);
+          localStorage.setItem('vidshrink_videos_compressed', maxComp.toString());
+          setVideosCompressedCount(maxComp);
+        }
       })
       .catch(() => {});
   }, []);
@@ -130,7 +152,12 @@ export function App() {
       .then(res => res.json())
       .then(data => {
         if (data.page_views) setPageViewsCount(data.page_views);
-        if (data.videos_compressed !== undefined) setVideosCompressedCount(data.videos_compressed);
+        if (data.videos_compressed !== undefined) {
+          const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
+          const maxComp = Math.max(localComp, data.videos_compressed);
+          localStorage.setItem('vidshrink_videos_compressed', maxComp.toString());
+          setVideosCompressedCount(maxComp);
+        }
       })
       .catch(() => {});
   };
@@ -170,6 +197,7 @@ export function App() {
 
   // Reset to Step 1 for another video
   const handleResetAll = () => {
+    sessionStorage.removeItem('vidshrink_saved_result');
     setCustomVideoUrl(null);
     setCompressedVideoUrl(null);
     setActualCompressedBytes(null);
@@ -185,6 +213,7 @@ export function App() {
       alert('Please select a valid video file (MP4, MOV, WebM, etc.)');
       return;
     }
+    sessionStorage.removeItem('vidshrink_saved_result');
     setSelectedFileObj(file);
     setFileName(file.name);
     setOriginalSizeBytes(file.size);
@@ -261,6 +290,16 @@ export function App() {
         setCompressProgress(100);
         setIsCompressing(false);
         setCompressDone(true);
+
+        // Persist compressed result so page refresh keeps download screen ready!
+        try {
+          sessionStorage.setItem('vidshrink_saved_result', JSON.stringify({
+            url: downloadUrl,
+            fileName: fileName,
+            origSize: originalSizeBytes,
+            compSize: data.compressed_size_bytes,
+          }));
+        } catch (e) {}
 
         // Update total videos compressed locally & fetch from server
         const newLocalComp = (parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10)) + 1;
