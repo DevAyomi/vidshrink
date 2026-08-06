@@ -763,11 +763,11 @@ export function App() {
             ) : compressDone ? (
               <>
                 <Check size={18} />
-                Async Encoding Complete!
+                Compression Complete!
               </>
             ) : (
               <>
-                Enqueue Job (Redis Queue)
+                Compress File (Rust FFmpeg)
                 <ArrowRight size={18} />
               </>
             )}
@@ -1028,7 +1028,7 @@ export function App() {
             onClick={handleStartCompression}
           >
             <Zap size={20} />
-            <span>Step 2: Enqueue Video Job</span>
+            <span>Step 2: Compress Video Now</span>
           </button>
         )}
       </div>
