@@ -1,8 +1,14 @@
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
-pub enum Codec { H264, H265, Av1 }
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Codec {
+    H264,
+    H265,
+    Av1,
+}
 
 impl fmt::Display for Codec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -15,8 +21,13 @@ impl fmt::Display for Codec {
     }
 }
 
-#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
-pub enum Quality { Lossless, VisuallyLossless, High, Balanced }
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Quality {
+    VisuallyLossless,
+    Balanced,
+    MaxCompression,
+}
 
 pub struct EncodeParams {
     pub crf: f32,
@@ -29,21 +40,53 @@ impl Quality {
         use Codec::*;
         use Quality::*;
         match (self, codec) {
-            (Lossless, H264) => EncodeParams { crf: 0.0, speed_preset: "veryslow", extra_args: vec![] },
-            (Lossless, H265) => EncodeParams { crf: 0.0, speed_preset: "veryslow", extra_args: vec!["-x265-params".into(), "lossless=1".into()] },
-            (Lossless, Av1)  => EncodeParams { crf: 0.0, speed_preset: "4", extra_args: vec!["-preset".into(), "4".into()] },
+            (VisuallyLossless, H264) => EncodeParams {
+                crf: 18.0,
+                speed_preset: "slow",
+                extra_args: vec![],
+            },
+            (VisuallyLossless, H265) => EncodeParams {
+                crf: 20.0,
+                speed_preset: "slow",
+                extra_args: vec![],
+            },
+            (VisuallyLossless, Av1) => EncodeParams {
+                crf: 24.0,
+                speed_preset: "6",
+                extra_args: vec![],
+            },
 
-            (VisuallyLossless, H264) => EncodeParams { crf: 16.0, speed_preset: "slow", extra_args: vec![] },
-            (VisuallyLossless, H265) => EncodeParams { crf: 18.0, speed_preset: "slow", extra_args: vec![] },
-            (VisuallyLossless, Av1)  => EncodeParams { crf: 24.0, speed_preset: "6", extra_args: vec![] },
+            (Balanced, H264) => EncodeParams {
+                crf: 23.0,
+                speed_preset: "medium",
+                extra_args: vec![],
+            },
+            (Balanced, H265) => EncodeParams {
+                crf: 26.0,
+                speed_preset: "medium",
+                extra_args: vec![],
+            },
+            (Balanced, Av1) => EncodeParams {
+                crf: 32.0,
+                speed_preset: "8",
+                extra_args: vec![],
+            },
 
-            (High, H264) => EncodeParams { crf: 20.0, speed_preset: "medium", extra_args: vec![] },
-            (High, H265) => EncodeParams { crf: 22.0, speed_preset: "medium", extra_args: vec![] },
-            (High, Av1)  => EncodeParams { crf: 30.0, speed_preset: "7", extra_args: vec![] },
-
-            (Balanced, H264) => EncodeParams { crf: 23.0, speed_preset: "medium", extra_args: vec![] },
-            (Balanced, H265) => EncodeParams { crf: 26.0, speed_preset: "medium", extra_args: vec![] },
-            (Balanced, Av1)  => EncodeParams { crf: 34.0, speed_preset: "8", extra_args: vec![] },
+            (MaxCompression, H264) => EncodeParams {
+                crf: 28.0,
+                speed_preset: "slower",
+                extra_args: vec![],
+            },
+            (MaxCompression, H265) => EncodeParams {
+                crf: 32.0,
+                speed_preset: "slower",
+                extra_args: vec![],
+            },
+            (MaxCompression, Av1) => EncodeParams {
+                crf: 40.0,
+                speed_preset: "9",
+                extra_args: vec![],
+            },
         }
     }
 }
@@ -51,10 +94,9 @@ impl Quality {
 impl fmt::Display for Quality {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Quality::Lossless => "lossless",
             Quality::VisuallyLossless => "visually-lossless",
-            Quality::High => "high",
             Quality::Balanced => "balanced",
+            Quality::MaxCompression => "max-compression",
         };
         write!(f, "{s}")
     }

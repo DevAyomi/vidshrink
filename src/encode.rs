@@ -9,9 +9,11 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-pub struct EncodeRequest<'a> {
-    pub input: &'a Path,
-    pub output: &'a Path,
+use std::path::PathBuf;
+
+pub struct EncodeRequest {
+    pub input: PathBuf,
+    pub output: PathBuf,
     pub codec: Codec,
     pub quality: Quality,
     pub target_width: Option<u32>,
@@ -28,7 +30,7 @@ pub fn run_encode(req: &EncodeRequest, source_info: &VideoInfo) -> Result<()> {
     let crf = req.custom_crf.unwrap_or(params.crf);
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-y").arg("-i").arg(req.input)
+    cmd.arg("-y").arg("-i").arg(&req.input)
         .arg("-c:v").arg(encoder)
         .arg("-crf").arg(crf.to_string())
         .arg("-preset").arg(params.speed_preset);
@@ -57,7 +59,7 @@ pub fn run_encode(req: &EncodeRequest, source_info: &VideoInfo) -> Result<()> {
     if req.preserve_metadata { cmd.arg("-map_metadata").arg("0"); }
 
     cmd.arg("-movflags").arg("+faststart");
-    cmd.arg("-progress").arg("pipe:1").arg("-nostats").arg(req.output);
+    cmd.arg("-progress").arg("pipe:1").arg("-nostats").arg(&req.output);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     println!("Encoding with {} | quality={} (CRF {}) | preset={}", req.codec, req.quality, crf, params.speed_preset);

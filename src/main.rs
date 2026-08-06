@@ -88,8 +88,8 @@ fn main() -> Result<()> {
         human_bytes(source_info.size_bytes), source_info.video_codec);
 
     let req = EncodeRequest {
-        input: &input_path,
-        output: &output,
+        input: input_path.clone(),
+        output: output.clone(),
         codec: args.codec,
         quality: args.quality,
         target_width: None,

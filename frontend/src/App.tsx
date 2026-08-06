@@ -64,12 +64,11 @@ export function App() {
   // Settings
   const [selectedResolution, setSelectedResolution] = useState<VideoPreset>(RESOLUTIONS[0]);
   const [isResDropdownOpen, setIsResDropdownOpen] = useState(false);
-  const [compressionPct, setCompressionPct] = useState<number>(36);
+  const [qualityPreset, setQualityPreset] = useState<'visually-lossless' | 'balanced' | 'max-compression'>('balanced');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Advanced options
   const [codec, setCodec] = useState<'h265' | 'h264' | 'av1'>('h265');
-  const [preset, setPreset] = useState<'slow' | 'medium' | 'fast'>('slow');
   const [audioBitrate, setAudioBitrate] = useState<number>(192);
 
   // Split View Slider position (0 to 100%)
@@ -84,6 +83,7 @@ export function App() {
   const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressProgress, setCompressProgress] = useState(0);
+  const [jobStatusText, setJobStatusText] = useState('Queued in worker pool...');
   const [compressDone, setCompressDone] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isRustEngineConnected, setIsRustEngineConnected] = useState<boolean>(true);
@@ -102,14 +102,35 @@ export function App() {
     return parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
   });
 
-  // Track page views on initial load & handle /admin route & restore saved result
+  // Refs
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoOrigRef = useRef<HTMLVideoElement>(null);
+  const videoCompRef = useRef<HTMLVideoElement>(null);
+
+  // Fetch admin stats
+  const fetchStats = () => {
+    fetch(`${API_BASE_URL}/api/stats`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.page_views) setPageViewsCount(data.page_views);
+        if (data.videos_compressed !== undefined) {
+          const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
+          const maxComp = Math.max(localComp, data.videos_compressed);
+          localStorage.setItem('vidshrink_videos_compressed', maxComp.toString());
+          setVideosCompressedCount(maxComp);
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Track page views on initial load & handle /admin route
   useEffect(() => {
     if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
       setShowAdminModal(true);
       fetchStats();
     }
 
-    // Restore saved compressed video result if refreshing page
     try {
       const savedResultStr = sessionStorage.getItem('vidshrink_saved_result');
       if (savedResultStr) {
@@ -126,12 +147,10 @@ export function App() {
       }
     } catch (e) {}
 
-    // Increment local counter as fallback
     const localViews = (parseInt(localStorage.getItem('vidshrink_page_views') || '0', 10)) + 1;
     localStorage.setItem('vidshrink_page_views', localViews.toString());
     setPageViewsCount(localViews);
 
-    // Call server to track view
     fetch(`${API_BASE_URL}/api/track-view`, { method: 'POST' })
       .then(res => res.json())
       .then(data => {
@@ -146,34 +165,12 @@ export function App() {
       .catch(() => {});
   }, []);
 
-  // Fetch admin stats when admin panel is open
-  const fetchStats = () => {
-    fetch(`${API_BASE_URL}/api/stats`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.page_views) setPageViewsCount(data.page_views);
-        if (data.videos_compressed !== undefined) {
-          const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
-          const maxComp = Math.max(localComp, data.videos_compressed);
-          localStorage.setItem('vidshrink_videos_compressed', maxComp.toString());
-          setVideosCompressedCount(maxComp);
-        }
-      })
-      .catch(() => {});
-  };
-
-  // Refs
-  const splitContainerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoOrigRef = useRef<HTMLVideoElement>(null);
-  const videoCompRef = useRef<HTMLVideoElement>(null);
-
   // Size calculations
   const originalSizeMB = originalSizeBytes > 0 ? (originalSizeBytes / (1024 * 1024)).toFixed(2) : '0.00';
   const calculatedReducedSizeMB = actualCompressedBytes !== null
     ? (actualCompressedBytes / (1024 * 1024)).toFixed(2)
     : originalSizeBytes > 0
-    ? ((parseFloat(originalSizeMB)) * (1 - compressionPct / 100) * (selectedResolution.width * selectedResolution.height) / (1080 * 960)).toFixed(2)
+    ? ((parseFloat(originalSizeMB)) * (qualityPreset === 'max-compression' ? 0.4 : qualityPreset === 'visually-lossless' ? 0.75 : 0.6) * (selectedResolution.width * selectedResolution.height) / (1080 * 960)).toFixed(2)
     : '0.00';
   const reducedDiffMB = originalSizeBytes > 0 ? (parseFloat(originalSizeMB) - parseFloat(calculatedReducedSizeMB)).toFixed(1) : '0.0';
 
@@ -188,14 +185,12 @@ export function App() {
     setSplitPos(newPct);
   };
 
-  // Format Seconds to MM:SS
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Reset to Step 1 for another video
   const handleResetAll = () => {
     sessionStorage.removeItem('vidshrink_saved_result');
     setCustomVideoUrl(null);
@@ -207,7 +202,6 @@ export function App() {
     setMobileStep(1);
   };
 
-  // Handle File Selection
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith('video/')) {
       alert('Please select a valid video file (MP4, MOV, WebM, etc.)');
@@ -223,7 +217,7 @@ export function App() {
     setActualCompressedBytes(null);
     setCompressDone(false);
     setIsPlaying(true);
-    setMobileStep(2); // Auto-advance to Step 2: Presets on mobile
+    setMobileStep(2);
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,7 +225,6 @@ export function App() {
     if (file) handleFileChange(file);
   };
 
-  // Handle Drag and Drop
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
@@ -239,93 +232,127 @@ export function App() {
     if (file) handleFileChange(file);
   };
 
-  // Trigger Real Rust FFmpeg Compression API
+  const pollJobStatus = async (jobId: string) => {
+    const startTime = Date.now();
+    const maxTimeoutMs = 15 * 60 * 1000;
+
+    while (Date.now() - startTime < maxTimeoutMs) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const status = data.status;
+
+        if (status === 'Queued' || (typeof status === 'object' && 'Queued' in status)) {
+          setJobStatusText('Queued in Redis worker pool...');
+          setCompressProgress((prev) => Math.min(prev + 2, 40));
+        } else if (typeof status === 'object' && 'Processing' in status) {
+          setJobStatusText('Worker running FFmpeg encode...');
+          setCompressProgress((prev) => Math.min(prev + 5, 90));
+        } else if (typeof status === 'object' && 'Completed' in status) {
+          const result = status.Completed.result;
+          const downloadUrl = result.compressed_url.startsWith('http')
+            ? result.compressed_url
+            : `${API_BASE_URL}${result.compressed_url}`;
+
+          setCompressedVideoUrl(downloadUrl);
+          setActualCompressedBytes(result.compressed_size_bytes);
+          setIsRustEngineConnected(true);
+          setCompressProgress(100);
+          setIsCompressing(false);
+          setCompressDone(true);
+
+          try {
+            sessionStorage.setItem(
+              'vidshrink_saved_result',
+              JSON.stringify({
+                url: downloadUrl,
+                fileName: fileName,
+                origSize: originalSizeBytes,
+                compSize: result.compressed_size_bytes,
+              })
+            );
+          } catch (e) {}
+
+          const newLocalComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10) + 1;
+          localStorage.setItem('vidshrink_videos_compressed', newLocalComp.toString());
+          setVideosCompressedCount(newLocalComp);
+          fetchStats();
+          return;
+        } else if (typeof status === 'object' && 'Failed' in status) {
+          throw new Error(status.Failed.error || 'Encoding failed on worker server');
+        }
+      } catch (err: any) {
+        console.error('Job status polling error:', err);
+        setIsCompressing(false);
+        alert(`Compression failed: ${err?.message || err}`);
+        return;
+      }
+    }
+    setIsCompressing(false);
+    alert('Compression timed out.');
+  };
+
   const handleStartCompression = async () => {
-    if (!customVideoUrl) {
+    if (!customVideoUrl || !selectedFileObj) {
       alert('Please upload a video file first!');
       return;
     }
 
-    if (!selectedFileObj) {
-      alert('Please select a video file from your computer.');
-      return;
-    }
-
-    setMobileStep(3); // Advance to Step 3: Compress & Download on mobile
+    setMobileStep(3);
     setIsCompressing(true);
-    setCompressProgress(15);
+    setCompressProgress(10);
+    setJobStatusText('Streaming video chunks to disk...');
     setCompressDone(false);
 
     try {
       const formData = new FormData();
       formData.append('file', selectedFileObj);
       formData.append('codec', codec);
-      formData.append('compressionPct', compressionPct.toString());
+      formData.append('quality', qualityPreset);
       formData.append('width', selectedResolution.width.toString());
       formData.append('height', selectedResolution.height.toString());
       formData.append('audioBitrate', audioBitrate.toString());
 
-      setCompressProgress(45);
+      setCompressProgress(20);
 
       const res = await fetch(`${API_BASE_URL}/api/compress`, {
         method: 'POST',
         body: formData,
       });
 
-      setCompressProgress(85);
-
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(errText || 'Server compression failed');
+        throw new Error(errText || 'Server compression request failed');
       }
 
       const data = await res.json();
-      if (data.success) {
-        const downloadUrl = data.compressed_url.startsWith('http')
-          ? data.compressed_url
-          : `${API_BASE_URL}${data.compressed_url}`;
-        setCompressedVideoUrl(downloadUrl);
-        setActualCompressedBytes(data.compressed_size_bytes);
-        setIsRustEngineConnected(true);
-        setCompressProgress(100);
-        setIsCompressing(false);
-        setCompressDone(true);
-
-        // Persist compressed result so page refresh keeps download screen ready!
-        try {
-          sessionStorage.setItem('vidshrink_saved_result', JSON.stringify({
-            url: downloadUrl,
-            fileName: fileName,
-            origSize: originalSizeBytes,
-            compSize: data.compressed_size_bytes,
-          }));
-        } catch (e) {}
-
-        // Update total videos compressed locally & fetch from server
-        const newLocalComp = (parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10)) + 1;
-        localStorage.setItem('vidshrink_videos_compressed', newLocalComp.toString());
-        setVideosCompressedCount(newLocalComp);
-        fetchStats();
+      if (data.success && data.job_id) {
+        setJobStatusText('Upload complete! Job pushed to Redis queue...');
+        setCompressProgress(30);
+        await pollJobStatus(data.job_id);
+      } else {
+        throw new Error('Server returned invalid job ID response');
       }
     } catch (err: any) {
-      console.error("Rust FFmpeg server error:", err);
+      console.error('Rust FFmpeg server error:', err);
       setIsRustEngineConnected(false);
       alert(`Compression error: ${err?.message || err}`);
       setIsCompressing(false);
     }
   };
 
-  // Dedicated Blob Download Function for cross-origin & direct file save
   const handleDownloadCompressed = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     if (!compressedVideoUrl) {
-      alert("No compressed video file available yet. Please click 'Compress File' first!");
+      alert("No compressed video file available yet!");
       return;
     }
 
     try {
       const res = await fetch(compressedVideoUrl);
-      if (!res.ok) throw new Error("Failed fetching video file for download");
+      if (!res.ok) throw new Error("Failed fetching video file");
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
 
@@ -335,10 +362,8 @@ export function App() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
       setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (err) {
-      console.warn("Blob download fallback:", err);
       const link = document.createElement('a');
       link.href = compressedVideoUrl;
       link.download = fileName ? `compressed_${fileName}` : 'compressed_video.mp4';
@@ -349,7 +374,6 @@ export function App() {
     }
   };
 
-  // Admin Login Handler
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError('');
@@ -361,7 +385,6 @@ export function App() {
     }
   };
 
-  // Toggle Video Play / Pause
   const togglePlay = () => {
     if (videoOrigRef.current && videoCompRef.current) {
       if (isPlaying) {
@@ -377,7 +400,7 @@ export function App() {
 
   return (
     <div className="app-container">
-      {/* Full-Width Application Top Header */}
+      {/* App Header */}
       <header className="app-header">
         <div className="header-left">
           <div className="brand-logo" onClick={() => setCustomVideoUrl(null)}>
@@ -404,7 +427,7 @@ export function App() {
         <div className="header-right">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: isRustEngineConnected ? '#166534' : '#9A3412', background: isRustEngineConnected ? '#F0FDF4' : '#FFEDD5', padding: '4px 10px', borderRadius: 9999, border: `1px solid ${isRustEngineConnected ? '#BBF7D0' : '#FED7AA'}` }}>
             <Cpu size={14} />
-            {isRustEngineConnected ? 'Rust FFmpeg Engine Active' : 'Browser Preview Mode'}
+            {isRustEngineConnected ? 'Decoupled Worker Queue Active' : 'Browser Preview Mode'}
           </div>
         </div>
       </header>
@@ -428,31 +451,23 @@ export function App() {
                 <div className="step-num">1</div>
                 <div className="step-content">
                   <h4>Upload Your Video</h4>
-                  <p>Drag and drop any MP4, MOV, AVI, MKV, or WebM video file into the dropzone, or click to browse files.</p>
+                  <p>Drag and drop multi-gigabyte MP4, MOV, or WebM files into the dropzone. Uploads stream safely chunk-by-chunk.</p>
                 </div>
               </div>
 
               <div className="step-card">
                 <div className="step-num">2</div>
                 <div className="step-content">
-                  <h4>Configure Compression Settings</h4>
-                  <p>Select target resolution (e.g. 1080p, 720p) and set your desired compression slider (5% to 90%). Expand Advanced Settings to pick H.265 / H.264 / AV1 codecs.</p>
+                  <h4>Pick Your Trade-off Preset</h4>
+                  <p>Choose between <strong>Visually Lossless</strong>, <strong>Balanced</strong>, or <strong>Maximum Compression</strong> presets.</p>
                 </div>
               </div>
 
               <div className="step-card">
                 <div className="step-num">3</div>
                 <div className="step-content">
-                  <h4>Compress & Preview</h4>
-                  <p>Click <strong>Compress File (Rust FFmpeg)</strong>. Watch real-time encoding, then use the split visual slider to compare original vs compressed quality side-by-side!</p>
-                </div>
-              </div>
-
-              <div className="step-card">
-                <div className="step-num">4</div>
-                <div className="step-content">
-                  <h4>Download Clean MP4</h4>
-                  <p>Click <strong>Download Real MP4</strong> to instantly save your compressed video with zero quality loss.</p>
+                  <h4>Redis Decoupled Queue</h4>
+                  <p>Jobs get enqueued immediately so the site never blocks. Fixed core worker pool processes encodes asynchronously.</p>
                 </div>
               </div>
             </div>
@@ -538,7 +553,6 @@ export function App() {
                     <div className="stat-info">
                       <span className="stat-label">Total Page Views</span>
                       <span className="stat-number">{pageViewsCount}</span>
-                      <span className="stat-subtext">People who accessed page</span>
                     </div>
                   </div>
 
@@ -549,19 +563,7 @@ export function App() {
                     <div className="stat-info">
                       <span className="stat-label">Videos Compressed</span>
                       <span className="stat-number">{videosCompressedCount}</span>
-                      <span className="stat-subtext">Total FFmpeg encodes</span>
                     </div>
-                  </div>
-                </div>
-
-                <div className="admin-info-box">
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', marginBottom: 4 }}>
-                    Platform Health Status
-                  </div>
-                  <div style={{ fontSize: 12, color: '#475569' }}>
-                    {isRustEngineConnected
-                      ? 'Server is responding. All background Rust workers are running smoothly.'
-                      : 'Rust server unreachable. Operating in browser preview mode.'}
                   </div>
                 </div>
               </div>
@@ -570,10 +572,9 @@ export function App() {
         </div>
       )}
 
-
       {/* Main Application Body */}
       <main className={`app-body mobile-step-${mobileStep}`}>
-        {/* Mobile Step Wizard Navigation */}
+        {/* Mobile Step Wizard */}
         <div className="mobile-step-wizard">
           <div
             className={`wizard-step ${mobileStep === 1 ? 'active' : ''} ${mobileStep > 1 ? 'completed' : ''}`}
@@ -600,14 +601,14 @@ export function App() {
           </div>
         </div>
 
-        {/* Left Column: Compression Options (Step 2) */}
+        {/* Left Options Panel */}
         <section className="options-panel">
           <h2 className="options-title">
             <ChevronLeft size={24} className="options-title-icon" onClick={() => setCustomVideoUrl(null)} />
             Compression Options
           </h2>
 
-          {/* Resolution Selector Card */}
+          {/* Resolution Card */}
           <div className="setting-card">
             <div className="setting-label">Resolution</div>
             <div
@@ -637,36 +638,74 @@ export function App() {
             )}
           </div>
 
-          {/* Compression Percentage Slider Card */}
+          {/* Quality Trade-off CRF Presets */}
           <div className="setting-card">
             <div className="setting-card-header">
-              <span className="setting-label">Compression</span>
-              <span className="setting-value">{compressionPct}%</span>
+              <span className="setting-label">Quality Preset Trade-off</span>
             </div>
-
-            <div style={{ padding: '14px 0 8px 0' }}>
-              <input
-                type="range"
-                min="5"
-                max="90"
-                value={compressionPct}
-                onChange={(e) => setCompressionPct(Number(e.target.value))}
+            <div className="quality-presets-grid" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              <button
+                type="button"
+                className={`preset-btn ${qualityPreset === 'visually-lossless' ? 'active' : ''}`}
+                onClick={() => setQualityPreset('visually-lossless')}
                 style={{
-                  background: `linear-gradient(to right, #0066FF 0%, #0066FF ${compressionPct}%, #E2E8F0 ${compressionPct}%, #E2E8F0 100%)`
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: `1.5px solid ${qualityPreset === 'visually-lossless' ? '#0066FF' : '#CBD5E1'}`,
+                  background: qualityPreset === 'visually-lossless' ? '#EFF6FF' : '#FFF',
+                  textAlign: 'left',
+                  cursor: 'pointer'
                 }}
-              />
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>✨ Visually Lossless</div>
+                <div style={{ fontSize: 11, color: '#64748B' }}>Highest visual fidelity (CRF 18-24)</div>
+              </button>
+
+              <button
+                type="button"
+                className={`preset-btn ${qualityPreset === 'balanced' ? 'active' : ''}`}
+                onClick={() => setQualityPreset('balanced')}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: `1.5px solid ${qualityPreset === 'balanced' ? '#0066FF' : '#CBD5E1'}`,
+                  background: qualityPreset === 'balanced' ? '#EFF6FF' : '#FFF',
+                  textAlign: 'left',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>⚡ Balanced (Recommended)</div>
+                <div style={{ fontSize: 11, color: '#64748B' }}>Optimal size vs quality (CRF 23-32)</div>
+              </button>
+
+              <button
+                type="button"
+                className={`preset-btn ${qualityPreset === 'max-compression' ? 'active' : ''}`}
+                onClick={() => setQualityPreset('max-compression')}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: `1.5px solid ${qualityPreset === 'max-compression' ? '#0066FF' : '#CBD5E1'}`,
+                  background: qualityPreset === 'max-compression' ? '#EFF6FF' : '#FFF',
+                  textAlign: 'left',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>📦 Maximum Compression</div>
+                <div style={{ fontSize: 11, color: '#64748B' }}>Smallest payload file size (CRF 28-40)</div>
+              </button>
             </div>
 
-            {/* Toggle Advance Settings */}
             <div
               className="advance-toggle"
               onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{ marginTop: 12 }}
             >
-              <span>{showAdvanced ? '- Hide Advance Settings' : '+ Advance Settings'}</span>
+              <span>{showAdvanced ? '- Hide Advanced Settings' : '+ Advanced Codec Options'}</span>
             </div>
 
             {showAdvanced && (
-              <div className="advanced-panel">
+              <div className="advanced-panel" style={{ marginTop: 8 }}>
                 <div className="form-group">
                   <label className="form-label">Encoder Codec</label>
                   <select
@@ -676,24 +715,11 @@ export function App() {
                   >
                     <option value="h265">H.265 / HEVC (Recommended)</option>
                     <option value="h264">H.264 / AVC (High Compatibility)</option>
-                    <option value="av1">AV1 (Next-Gen Ultra Compression)</option>
+                    <option value="av1">AV1 (Next-Gen Ultra)</option>
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Speed Preset</label>
-                  <select
-                    className="form-select"
-                    value={preset}
-                    onChange={(e) => setPreset(e.target.value as any)}
-                  >
-                    <option value="slow">Slow (Higher Quality / Smaller)</option>
-                    <option value="medium">Medium (Balanced Speed)</option>
-                    <option value="fast">Fast (Quick Encode)</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
+                <div className="form-group" style={{ marginTop: 8 }}>
                   <label className="form-label">Audio Bitrate</label>
                   <select
                     className="form-select"
@@ -702,28 +728,28 @@ export function App() {
                   >
                     <option value={128}>128 kbps (Standard)</option>
                     <option value={192}>192 kbps (High Quality)</option>
-                    <option value={320}>320 kbps (Lossless Audio)</option>
+                    <option value={320}>320 kbps (Lossless)</option>
                   </select>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Estimated Reduced Size Summary Box */}
+          {/* Size Summary */}
           <div className="summary-block">
-            <span className="summary-label">Estimated Reduced Size</span>
+            <span className="summary-label">Estimated Output Size</span>
             <div className="summary-size-wrapper">
               <span className="summary-size-main">{calculatedReducedSizeMB}MB</span>
               {originalSizeBytes > 0 && <span className="summary-size-old">{originalSizeMB}MB</span>}
             </div>
             {originalSizeBytes > 0 && (
               <span className="summary-savings-tag">
-                Almost {reducedDiffMB}MB reduced ({compressionPct}% saved)
+                Almost {reducedDiffMB}MB saved
               </span>
             )}
           </div>
 
-          {/* Main Action Button */}
+          {/* Compress Button */}
           <button
             className="btn-compress"
             onClick={handleStartCompression}
@@ -732,22 +758,21 @@ export function App() {
             {isCompressing ? (
               <>
                 <RotateCw size={18} className="animate-spin-fast" />
-                FFmpeg Encoding ({compressProgress}%)...
+                {jobStatusText} ({compressProgress}%)
               </>
             ) : compressDone ? (
               <>
                 <Check size={18} />
-                Real Compression Complete!
+                Async Encoding Complete!
               </>
             ) : (
               <>
-                Compress File (Rust FFmpeg)
+                Enqueue Job (Redis Queue)
                 <ArrowRight size={18} />
               </>
             )}
           </button>
 
-          {/* File Selected Status Card */}
           {customVideoUrl && (
             <div className="selected-file-card">
               <div className="file-info-group">
@@ -783,10 +808,9 @@ export function App() {
                 <div className="thank-you-badge">
                   <Sparkles size={24} style={{ color: '#166534' }} />
                 </div>
-                <h3 className="thank-you-title">🎉 Thank You! Video Ready</h3>
+                <h3 className="thank-you-title">🎉 Video Encoded Successfully</h3>
                 <p className="thank-you-subtext">
                   Reduced from <strong>{originalSizeMB} MB</strong> to <strong>{calculatedReducedSizeMB} MB</strong>
-                  <span className="savings-tag font-bold"> ({compressionPct}% saved)</span>
                 </p>
               </div>
 
@@ -796,7 +820,7 @@ export function App() {
                   className="btn-download-primary"
                 >
                   <Sparkles size={18} />
-                  Download Real MP4 ({calculatedReducedSizeMB}MB)
+                  Download MP4 ({calculatedReducedSizeMB}MB)
                 </button>
                 <button
                   onClick={handleResetAll}
@@ -810,10 +834,9 @@ export function App() {
           )}
         </section>
 
-        {/* Right Column: Preview Area or Upload Dropzone */}
+        {/* Right Preview Card */}
         <section className="preview-card">
           {!customVideoUrl ? (
-            /* Upload Dropzone View (Default when no video uploaded) */
             <div
               className={`upload-dropzone ${isDraggingOver ? 'dragging' : ''}`}
               onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
@@ -826,10 +849,9 @@ export function App() {
               </div>
               <div className="upload-headline">Upload your video to compress</div>
               <div className="upload-subtext">
-                Drag and drop your video file here, or click to browse from your computer.
+                Supports multi-gigabyte video uploads. Files stream to disk in chunks.
               </div>
 
-              {/* Social Proof Credibility Metrics */}
               <div className="dropzone-credibility-bar">
                 <div className="cred-stat-item">
                   <Eye size={15} style={{ color: '#0066FF' }} />
@@ -850,7 +872,6 @@ export function App() {
               </div>
             </div>
           ) : (
-            /* Uploaded Video Split Comparison View */
             <>
               <div
                 ref={splitContainerRef}
@@ -860,13 +881,11 @@ export function App() {
                 onMouseLeave={handleMouseUp}
                 onMouseMove={handleMouseMove}
               >
-                {/* Floating BEFORE & AFTER Badges */}
                 <div className="split-badge badge-after">
-                  {compressedVideoUrl ? '◀ AFTER (Real FFmpeg Output)' : '◀ AFTER (Preview Filter)'}
+                  {compressedVideoUrl ? '◀ AFTER (Redis FFmpeg Worker Output)' : '◀ AFTER (Preview Filter)'}
                 </div>
                 <div className="split-badge badge-before">BEFORE (Original) ▶</div>
 
-                {/* Original HTML5 Video */}
                 <video
                   ref={videoOrigRef}
                   src={customVideoUrl}
@@ -875,15 +894,13 @@ export function App() {
                   loop
                   muted
                   onLoadedMetadata={(e) => {
-                    const video = e.currentTarget;
-                    setDuration(video.duration || 0);
+                    setDuration(e.currentTarget.duration || 0);
                   }}
                   onTimeUpdate={(e) => {
                     setCurrentTime(e.currentTarget.currentTime);
                   }}
                 />
 
-                {/* Compressed Right Layer (Plays actual FFmpeg output file when generated!) */}
                 <div
                   className="split-layer-right"
                   style={{ clipPath: `polygon(${splitPos}% 0, 100% 0, 100% 100%, ${splitPos}% 100%)` }}
@@ -895,11 +912,9 @@ export function App() {
                     autoPlay
                     loop
                     muted
-                    style={!compressedVideoUrl ? { filter: `contrast(${1 + compressionPct / 250}) brightness(0.98)` } : {}}
                   />
                 </div>
 
-                {/* Vertical Split Line & Handle */}
                 <div
                   className="split-divider-line"
                   style={{ left: `${splitPos}%` }}
@@ -911,17 +926,15 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Edit Video Overlay Badge */}
                 <div
                   className="edit-video-badge"
-                  onClick={() => alert("Edit Video Trimmer opened! Trim, crop, or adjust filters.")}
+                  onClick={() => alert("Edit Video Trimmer opened!")}
                 >
                   <Scissors size={14} />
                   Edit Video
                 </div>
               </div>
 
-              {/* Info Stats Row */}
               <div className="info-stats-row">
                 <div className="info-stat-group">
                   <span className="info-stat-title">Source Video</span>
@@ -935,19 +948,18 @@ export function App() {
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', fontSize: 13, cursor: 'pointer' }}
                   >
                     <Upload size={14} style={{ transform: 'rotate(180deg)' }} />
-                    Download Compressed MP4 ({calculatedReducedSizeMB}MB)
+                    Download Encoded MP4 ({calculatedReducedSizeMB}MB)
                   </button>
                 )}
 
                 <div className="info-stat-group" style={{ textAlign: 'right' }}>
                   <span className="info-stat-title">
-                    {compressedVideoUrl ? 'Real Compressed Video' : 'Compressed Video (Estimated)'}
+                    {compressedVideoUrl ? 'Compressed Video' : 'Compressed Video (Estimated)'}
                   </span>
                   <span className="info-stat-sub">Size: {calculatedReducedSizeMB}MB</span>
                 </div>
               </div>
 
-              {/* Video Player Control Bar */}
               <div className="player-controls-bar">
                 <button
                   className="btn-play-pause"
@@ -987,7 +999,7 @@ export function App() {
         </section>
       </main>
 
-      {/* Floating Mobile Bottom Action Bar (Visible on Mobile Screens) */}
+      {/* Mobile Sticky Bar */}
       <div className="mobile-sticky-bar">
         {mobileStep === 1 || !customVideoUrl ? (
           <button
@@ -1000,7 +1012,7 @@ export function App() {
         ) : isCompressing ? (
           <button className="mobile-action-btn processing" disabled>
             <RotateCw size={20} className="animate-spin-fast" />
-            <span>Step 3: Encoding ({compressProgress}%)...</span>
+            <span>Step 3: {jobStatusText} ({compressProgress}%)...</span>
           </button>
         ) : compressDone ? (
           <button
@@ -1008,7 +1020,7 @@ export function App() {
             onClick={handleDownloadCompressed}
           >
             <Sparkles size={20} />
-            <span>Step 3: Download Real MP4 ({calculatedReducedSizeMB}MB)</span>
+            <span>Step 3: Download Encoded MP4 ({calculatedReducedSizeMB}MB)</span>
           </button>
         ) : (
           <button
@@ -1016,7 +1028,7 @@ export function App() {
             onClick={handleStartCompression}
           >
             <Zap size={20} />
-            <span>Step 2: Compress Video Now ({compressionPct}% Saved)</span>
+            <span>Step 2: Enqueue Video Job</span>
           </button>
         )}
       </div>
