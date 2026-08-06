@@ -200,7 +200,7 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
         .route("/api/compress", post(handle_compress))
         .route("/api/jobs/:job_id", get(handle_job_status))
         .route("/api/downloads/:filename", get(handle_download))
-        .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5 GB limit
+        .layer(DefaultBodyLimit::max(200 * 1024 * 1024)) // 200 MB max body limit
         .layer(cors)
         .with_state(ctx);
 
@@ -337,7 +337,19 @@ async fn handle_compress(
                 }
             }
             let writer = file_writer.as_mut().unwrap();
+            let mut total_bytes: u64 = 0;
+            const MAX_FILE_SIZE_BYTES: u64 = 200 * 1024 * 1024; // 200 MB limit
+
             while let Ok(Some(chunk)) = field.chunk().await {
+                total_bytes += chunk.len() as u64;
+                if total_bytes > MAX_FILE_SIZE_BYTES {
+                    let _ = tokio::fs::remove_file(&input_path).await;
+                    return (
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "File size exceeds maximum limit of 200MB",
+                    )
+                        .into_response();
+                }
                 if let Err(e) = writer.write_all(&chunk).await {
                     let _ = tokio::fs::remove_file(&input_path).await;
                     return (
