@@ -159,7 +159,12 @@ export function App() {
     fetch(`${API_BASE_URL}/api/stats`)
       .then(res => res.json())
       .then(data => {
-        if (data.page_views) setPageViewsCount(data.page_views);
+        if (data.page_views) {
+          const localViews = parseInt(localStorage.getItem('vidshrink_page_views') || '1', 10);
+          const maxViews = Math.max(localViews, data.page_views);
+          localStorage.setItem('vidshrink_page_views', maxViews.toString());
+          setPageViewsCount(maxViews);
+        }
         if (data.videos_compressed !== undefined) {
           const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
           const maxComp = Math.max(localComp, data.videos_compressed);
@@ -200,7 +205,12 @@ export function App() {
     fetch(`${API_BASE_URL}/api/track-view`, { method: 'POST' })
       .then(res => res.json())
       .then(data => {
-        if (data.page_views) setPageViewsCount(data.page_views);
+        if (data.page_views) {
+          const currentLocal = parseInt(localStorage.getItem('vidshrink_page_views') || '1', 10);
+          const maxViews = Math.max(currentLocal, data.page_views);
+          localStorage.setItem('vidshrink_page_views', maxViews.toString());
+          setPageViewsCount(maxViews);
+        }
         if (data.videos_compressed !== undefined) {
           const localComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10);
           const maxComp = Math.max(localComp, data.videos_compressed);

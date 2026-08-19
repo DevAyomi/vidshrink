@@ -129,9 +129,9 @@ pub struct AppContext {
 }
 
 pub async fn start_server(port: u16) -> anyhow::Result<()> {
-    let (initial_views, initial_compressed) = load_persistent_stats();
-    PAGE_VIEWS.store(initial_views, Ordering::SeqCst);
-    VIDEOS_COMPRESSED.store(initial_compressed, Ordering::SeqCst);
+    let (file_views, file_compressed) = load_persistent_stats();
+    let mut initial_views = file_views.max(1);
+    let mut initial_compressed = file_compressed;
 
     let redis_url = std::env::var("REDIS_URL")
         .or_else(|_| std::env::var("REDISURL"))
@@ -139,8 +139,19 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
 
     let pool = match Config::from_url(&redis_url).create_pool(Some(Runtime::Tokio1)) {
         Ok(p) => match p.get().await {
-            Ok(_) => {
+            Ok(mut conn) => {
                 println!("✅ Connected to Redis at {}", redis_url);
+                // Synchronize stats with Redis
+                let redis_views: Option<u64> = conn.get("vidshrink:stats:page_views").await.ok();
+                let redis_comp: Option<u64> = conn.get("vidshrink:stats:videos_compressed").await.ok();
+                if let Some(rv) = redis_views {
+                    initial_views = initial_views.max(rv);
+                }
+                if let Some(rc) = redis_comp {
+                    initial_compressed = initial_compressed.max(rc);
+                }
+                let _: Result<(), _> = conn.set("vidshrink:stats:page_views", initial_views).await;
+                let _: Result<(), _> = conn.set("vidshrink:stats:videos_compressed", initial_compressed).await;
                 Some(p)
             }
             Err(e) => {
@@ -154,6 +165,10 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
             None
         }
     };
+
+    PAGE_VIEWS.store(initial_views, Ordering::SeqCst);
+    VIDEOS_COMPRESSED.store(initial_compressed, Ordering::SeqCst);
+    save_persistent_stats(initial_views, initial_compressed);
 
     // Calculate core count for fixed-size worker concurrency pool
     let core_count = std::thread::available_parallelism()
@@ -215,9 +230,25 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_track_view() -> impl axum::response::IntoResponse {
-    let views = PAGE_VIEWS.fetch_add(1, Ordering::SeqCst) + 1;
-    let compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+async fn handle_track_view(
+    axum::extract::State(ctx): axum::extract::State<AppContext>,
+) -> impl axum::response::IntoResponse {
+    let mut views = PAGE_VIEWS.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+
+    if let Some(pool) = &ctx.state.redis_pool {
+        if let Ok(mut conn) = pool.get().await {
+            if let Ok(rv) = conn.incr::<_, _, u64>("vidshrink:stats:page_views", 1).await {
+                views = rv;
+                PAGE_VIEWS.store(views, Ordering::SeqCst);
+            }
+            if let Ok(rc) = conn.get::<_, u64>("vidshrink:stats:videos_compressed").await {
+                compressed = rc;
+                VIDEOS_COMPRESSED.store(compressed, Ordering::SeqCst);
+            }
+        }
+    }
+
     save_persistent_stats(views, compressed);
     axum::Json(StatsResponse {
         page_views: views,
@@ -225,9 +256,25 @@ async fn handle_track_view() -> impl axum::response::IntoResponse {
     })
 }
 
-async fn handle_get_stats() -> impl axum::response::IntoResponse {
-    let views = PAGE_VIEWS.load(Ordering::SeqCst);
-    let compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+async fn handle_get_stats(
+    axum::extract::State(ctx): axum::extract::State<AppContext>,
+) -> impl axum::response::IntoResponse {
+    let mut views = PAGE_VIEWS.load(Ordering::SeqCst);
+    let mut compressed = VIDEOS_COMPRESSED.load(Ordering::SeqCst);
+
+    if let Some(pool) = &ctx.state.redis_pool {
+        if let Ok(mut conn) = pool.get().await {
+            if let Ok(rv) = conn.get::<_, u64>("vidshrink:stats:page_views").await {
+                views = views.max(rv);
+                PAGE_VIEWS.store(views, Ordering::SeqCst);
+            }
+            if let Ok(rc) = conn.get::<_, u64>("vidshrink:stats:videos_compressed").await {
+                compressed = compressed.max(rc);
+                VIDEOS_COMPRESSED.store(compressed, Ordering::SeqCst);
+            }
+        }
+    }
+
     axum::Json(StatsResponse {
         page_views: views,
         videos_compressed: compressed,
@@ -578,8 +625,20 @@ async fn process_single_job(ctx: AppContext, payload: JobPayload) {
                 tokio::fs::metadata(&output_path).await.map(|m| m.len()).unwrap_or(1);
             let reduction_pct = 100.0 * (1.0 - (compressed_size as f64 / original_size.max(1) as f64));
 
-            let comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
-            let view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+            let mut comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
+            let mut view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+            if let Some(pool) = &ctx.state.redis_pool {
+                if let Ok(mut conn) = pool.get().await {
+                    if let Ok(rc) = conn.incr::<_, _, u64>("vidshrink:stats:videos_compressed", 1).await {
+                        comp_count = rc;
+                        VIDEOS_COMPRESSED.store(comp_count, Ordering::SeqCst);
+                    }
+                    if let Ok(rv) = conn.get::<_, u64>("vidshrink:stats:page_views").await {
+                        view_count = rv;
+                        PAGE_VIEWS.store(view_count, Ordering::SeqCst);
+                    }
+                }
+            }
             save_persistent_stats(view_count, comp_count);
 
             let res = CompressResult {
@@ -626,6 +685,7 @@ pub struct ImageConvertResponse {
 }
 
 async fn handle_convert_image(
+    axum::extract::State(ctx): axum::extract::State<AppContext>,
     mut multipart: axum::extract::Multipart,
 ) -> axum::response::Response {
     use axum::http::StatusCode;
@@ -782,8 +842,20 @@ async fn handle_convert_image(
 
             let reduction_pct = 100.0 * (1.0 - (converted_size as f64 / original_size as f64));
 
-            let comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
-            let view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+            let mut comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
+            let mut view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+            if let Some(pool) = &ctx.state.redis_pool {
+                if let Ok(mut conn) = pool.get().await {
+                    if let Ok(rc) = conn.incr::<_, _, u64>("vidshrink:stats:videos_compressed", 1).await {
+                        comp_count = rc;
+                        VIDEOS_COMPRESSED.store(comp_count, Ordering::SeqCst);
+                    }
+                    if let Ok(rv) = conn.get::<_, u64>("vidshrink:stats:page_views").await {
+                        view_count = rv;
+                        PAGE_VIEWS.store(view_count, Ordering::SeqCst);
+                    }
+                }
+            }
             save_persistent_stats(view_count, comp_count);
 
             axum::Json(ImageConvertResponse {
