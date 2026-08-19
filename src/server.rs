@@ -949,8 +949,8 @@ async fn handle_health() -> impl axum::response::IntoResponse {
         axum::http::StatusCode::OK,
         axum::Json(HealthStatus {
             status: "ok",
-            message: "VidShrink Rust Decoupled API with Redis Queue is Online!",
-            architecture: "Async Chunked Upload + Redis Queue Worker Pool",
+            message: "VidShrink Video Compressor & Universal Image Format Converter API is Online!",
+            architecture: "Async Chunked Upload + Redis Queue Worker Pool + Native Resvg/WebP Engine",
         }),
     )
 }

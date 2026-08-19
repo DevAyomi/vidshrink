@@ -2,6 +2,7 @@
 name = "vidshrink"
 version = "0.1.0"
 edition = "2021"
+description = "High-performance video compressor and universal image format conversion engine powered by Rust, FFmpeg, and resvg"
 
 [[bin]]
 name = "vidshrink"

@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
-#[command(name = "vidshrink", version, about)]
+#[command(name = "vidshrink", version, about = "High-Performance Video Compressor & Universal Image Format Converter")]
 struct Args {
     input: Option<PathBuf>,
     #[arg(short, long)]
