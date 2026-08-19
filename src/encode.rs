@@ -4,12 +4,10 @@ use anyhow::{bail, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
-use std::path::PathBuf;
 
 pub struct EncodeRequest {
     pub input: PathBuf,

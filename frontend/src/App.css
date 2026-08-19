@@ -1518,5 +1518,212 @@
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   MODE SWITCHER (VIDEO COMPRESSOR vs IMAGE CONVERTER)
+   ══════════════════════════════════════════════════════════ */
+.mode-switcher-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 20px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
+  gap: 12px;
+}
 
+.mode-pills-wrapper {
+  display: inline-flex;
+  background: #F1F5F9;
+  padding: 4px;
+  border-radius: 9999px;
+  border: 1px solid #E2E8F0;
+  gap: 4px;
+}
 
+.mode-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 9999px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748B;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mode-pill-btn:hover {
+  color: #0F172A;
+}
+
+.mode-pill-btn.active {
+  background: #FFFFFF;
+  color: #0F172A;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.mode-pill-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: #EFF6FF;
+  color: #0066FF;
+  text-transform: uppercase;
+}
+
+/* Image Format Grid */
+.format-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 500px) {
+  .format-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.format-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1.5px solid #E2E8F0;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.format-btn:hover {
+  border-color: #94A3B8;
+  background: #F8FAFC;
+}
+
+.format-btn.active {
+  border-color: #0066FF;
+  background: #EFF6FF;
+  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.15);
+}
+
+.format-btn-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: #0F172A;
+}
+
+.format-btn-desc {
+  font-size: 10px;
+  color: #64748B;
+  margin-top: 2px;
+}
+
+.format-btn.active .format-btn-name {
+  color: #0066FF;
+}
+
+/* Quality Slider */
+.quality-slider-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quality-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.quality-val-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0066FF;
+  background: #EFF6FF;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.range-input-custom {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #E2E8F0;
+  outline: none;
+  accent-color: #0066FF;
+  cursor: pointer;
+}
+
+.scale-presets-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.scale-preset-btn {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.scale-preset-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.scale-preset-btn.active {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-color: #0F172A;
+}
+
+.image-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.image-split-container {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  background-color: #0F172A;
+  background-image: 
+    linear-gradient(45deg, #1E293B 25%, transparent 25%), 
+    linear-gradient(-45deg, #1E293B 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #1E293B 75%), 
+    linear-gradient(-45deg, transparent 75%, #1E293B 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  cursor: ew-resize;
+  user-select: none;
+}
+
+@media (max-width: 768px) {
+  .image-split-container {
+    height: 320px;
+  }
+}

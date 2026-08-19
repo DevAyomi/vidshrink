@@ -1,4 +1,5 @@
 mod encode;
+mod image_convert;
 mod preset;
 mod probe;
 mod quality;
@@ -32,11 +33,26 @@ struct Args {
     server: bool,
     #[arg(long, default_value_t = 8080)]
     port: u16,
+    #[arg(long)]
+    format: Option<String>,
+    #[arg(long)]
+    image_quality: Option<u8>,
 }
 
 fn human_bytes(bytes: u64) -> String {
     let mb = bytes as f64 / 1_000_000.0;
     if mb >= 1000.0 { format!("{:.2} GB", mb / 1000.0) } else { format!("{:.1} MB", mb) }
+}
+
+fn is_image_path(path: &std::path::Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        matches!(
+            ext.to_lowercase().as_str(),
+            "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "tiff" | "tif" | "ico" | "avif" | "svg" | "heic"
+        )
+    } else {
+        false
+    }
 }
 
 fn check_tool_available(name: &str) -> Result<()> {
@@ -72,6 +88,56 @@ fn main() -> Result<()> {
 
     let input_path = args.input.unwrap();
     ensure!(input_path.exists(), "input file not found: {}", input_path.display());
+
+    // Check if input is an image
+    if is_image_path(&input_path) {
+        println!("{}", "── VidShrink Image Converter ──".bold());
+        let target_fmt_str = args.format.clone().unwrap_or_else(|| {
+            if let Some(out) = &args.output {
+                out.extension().and_then(|e| e.to_str()).unwrap_or("png").to_string()
+            } else {
+                "png".to_string()
+            }
+        });
+        let target_format = image_convert::ImageFormatType::from_str_lenient(&target_fmt_str);
+
+        let output = args.output.clone().unwrap_or_else(|| {
+            let stem = input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+            input_path.with_file_name(format!("{stem}.converted.{}", target_format.extension()))
+        });
+
+        println!("Source:  {}", input_path.display());
+        println!("Target:  {}", output.display());
+
+        let input_meta = image_convert::probe_image(&input_path)?;
+        println!("Input:   {}x{}, {}, format {}",
+            input_meta.width, input_meta.height, human_bytes(input_meta.size_bytes), input_meta.format);
+
+        let req = image_convert::ImageConvertRequest {
+            input_path: input_path.clone(),
+            output_path: output.clone(),
+            target_format,
+            quality: args.image_quality.or(Some(85)),
+            target_width: None,
+            target_height: None,
+            keep_aspect_ratio: true,
+        };
+
+        let start = Instant::now();
+        image_convert::convert_image(&req)?;
+        let elapsed = start.elapsed();
+
+        let output_meta = image_convert::probe_image(&output)?;
+        let pct_change = 100.0 * (1.0 - output_meta.size_bytes as f64 / input_meta.size_bytes.max(1) as f64);
+
+        println!();
+        println!("{}", "── Result ──".bold());
+        println!("Size:    {} -> {} ({}{:.1}%)", human_bytes(input_meta.size_bytes),
+            human_bytes(output_meta.size_bytes), if pct_change >= 0.0 { "-" } else { "+" }, pct_change.abs());
+        println!("Dimensions: {}x{} -> {}x{}", input_meta.width, input_meta.height, output_meta.width, output_meta.height);
+        println!("Time:    {:.2}s", elapsed.as_secs_f64());
+        return Ok(());
+    }
 
     let output = args.output.clone().unwrap_or_else(|| {
         let stem = input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");

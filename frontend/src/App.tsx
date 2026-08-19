@@ -22,7 +22,9 @@ import {
   X,
   Lock,
   LogOut,
-  Zap
+  Zap,
+  Image as ImageIcon,
+  Download
 } from 'lucide-react';
 import './App.css';
 
@@ -40,6 +42,24 @@ const RESOLUTIONS: VideoPreset[] = [
   { name: '854×480 (480p SD)', width: 854, height: 480 },
 ];
 
+interface ImageFormatOption {
+  key: string;
+  name: string;
+  desc: string;
+  isLossy?: boolean;
+}
+
+const IMAGE_FORMATS: ImageFormatOption[] = [
+  { key: 'png', name: 'PNG', desc: 'Lossless & Transparency' },
+  { key: 'jpg', name: 'JPG', desc: 'Standard Photo & Compact', isLossy: true },
+  { key: 'webp', name: 'WEBP', desc: 'Modern Web & Efficient', isLossy: true },
+  { key: 'avif', name: 'AVIF', desc: 'Next-Gen Ultra Small', isLossy: true },
+  { key: 'gif', name: 'GIF', desc: 'Graphics & Palette' },
+  { key: 'bmp', name: 'BMP', desc: 'Raw Bitmap Image' },
+  { key: 'tiff', name: 'TIFF', desc: 'High-Res Print Quality' },
+  { key: 'ico', name: 'ICO', desc: 'Icon / Favicon Format' },
+];
+
 const getApiBaseUrl = () => {
   let envUrl = (import.meta.env.VITE_API_URL as string || '').trim();
   if (!envUrl) return 'http://127.0.0.1:8080';
@@ -52,6 +72,9 @@ const getApiBaseUrl = () => {
 const API_BASE_URL = getApiBaseUrl();
 
 export function App() {
+  // Mode selection: 'video' or 'image'
+  const [appMode, setAppMode] = useState<'video' | 'image'>('video');
+
   // Video & File state
   const [selectedFileObj, setSelectedFileObj] = useState<File | null>(null);
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
@@ -61,17 +84,15 @@ export function App() {
   const [actualCompressedBytes, setActualCompressedBytes] = useState<number | null>(null);
   const [duration, setDuration] = useState<number>(0);
 
-  // Settings
+  // Video Settings
   const [selectedResolution, setSelectedResolution] = useState<VideoPreset>(RESOLUTIONS[0]);
   const [isResDropdownOpen, setIsResDropdownOpen] = useState(false);
   const [qualityPreset, setQualityPreset] = useState<'visually-lossless' | 'balanced' | 'max-compression'>('balanced');
   const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // Advanced options
   const [codec, setCodec] = useState<'h265' | 'h264' | 'av1'>('h265');
   const [audioBitrate, setAudioBitrate] = useState<number>(192);
 
-  // Split View Slider position (0 to 100%)
+  // Video Split View Slider position (0 to 100%)
   const [splitPos, setSplitPos] = useState<number>(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
 
@@ -79,7 +100,7 @@ export function App() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
 
-  // Processing & Engine state
+  // Video Processing & Engine state
   const [mobileStep, setMobileStep] = useState<1 | 2 | 3>(1);
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressProgress, setCompressProgress] = useState(0);
@@ -87,6 +108,29 @@ export function App() {
   const [compressDone, setCompressDone] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isRustEngineConnected, setIsRustEngineConnected] = useState<boolean>(true);
+
+  // ══════════════════════════════════════════════════════════
+  // IMAGE CONVERTER STATE
+  // ══════════════════════════════════════════════════════════
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  const [convertedImageUrl, setConvertedImageUrl] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string>('');
+  const [imageOriginalBytes, setImageOriginalBytes] = useState<number>(0);
+  const [imageConvertedBytes, setImageConvertedBytes] = useState<number | null>(null);
+  const [targetFormat, setTargetFormat] = useState<string>('png');
+  const [imageQuality, setImageQuality] = useState<number>(85);
+  const [imgOrigWidth, setImgOrigWidth] = useState<number>(0);
+  const [imgOrigHeight, setImgOrigHeight] = useState<number>(0);
+  const [targetWidth, setTargetWidth] = useState<number | ''>('');
+  const [targetHeight, setTargetHeight] = useState<number | ''>('');
+  const [scalePct, setScalePct] = useState<number>(100);
+  const [keepAspectRatio, setKeepAspectRatio] = useState<boolean>(true);
+  const [isConvertingImage, setIsConvertingImage] = useState<boolean>(false);
+  const [imageConvertDone, setImageConvertDone] = useState<boolean>(false);
+  const [imageConvertStatus, setImageConvertStatus] = useState<string>('');
+  const [imageSplitPos, setImageSplitPos] = useState<number>(50);
+  const [isDraggingImageSplit, setIsDraggingImageSplit] = useState<boolean>(false);
 
   // Stats & Modals state
   const [showHowToUse, setShowHowToUse] = useState(false);
@@ -104,7 +148,9 @@ export function App() {
 
   // Refs
   const splitContainerRef = useRef<HTMLDivElement>(null);
+  const imageSplitContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const videoOrigRef = useRef<HTMLVideoElement>(null);
   const videoCompRef = useRef<HTMLVideoElement>(null);
 
@@ -165,7 +211,7 @@ export function App() {
       .catch(() => {});
   }, []);
 
-  // Size calculations
+  // Size calculations for video
   const originalSizeMB = originalSizeBytes > 0 ? (originalSizeBytes / (1024 * 1024)).toFixed(2) : '0.00';
   const calculatedReducedSizeMB = actualCompressedBytes !== null
     ? (actualCompressedBytes / (1024 * 1024)).toFixed(2)
@@ -174,7 +220,22 @@ export function App() {
     : '0.00';
   const reducedDiffMB = originalSizeBytes > 0 ? (parseFloat(originalSizeMB) - parseFloat(calculatedReducedSizeMB)).toFixed(1) : '0.0';
 
-  // Handle Dragging Split View Slider
+  // Size calculations for image
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const imageOrigFormatted = formatBytes(imageOriginalBytes);
+  const imageConvertedFormatted = imageConvertedBytes !== null ? formatBytes(imageConvertedBytes) : null;
+  const imageSavingsPct = (imageOriginalBytes > 0 && imageConvertedBytes !== null)
+    ? ((1 - imageConvertedBytes / imageOriginalBytes) * 100).toFixed(1)
+    : null;
+
+  // Handle Dragging Split View Slider (Video)
   const handleMouseDown = () => setIsDraggingSplit(true);
   const handleMouseUp = () => setIsDraggingSplit(false);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -183,6 +244,17 @@ export function App() {
     const x = e.clientX - rect.left;
     const newPct = Math.max(5, Math.min(95, (x / rect.width) * 100));
     setSplitPos(newPct);
+  };
+
+  // Handle Dragging Split View Slider (Image)
+  const handleImageMouseDown = () => setIsDraggingImageSplit(true);
+  const handleImageMouseUp = () => setIsDraggingImageSplit(false);
+  const handleImageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingImageSplit || !imageSplitContainerRef.current) return;
+    const rect = imageSplitContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const newPct = Math.max(5, Math.min(95, (x / rect.width) * 100));
+    setImageSplitPos(newPct);
   };
 
   const formatTime = (secs: number) => {
@@ -202,10 +274,29 @@ export function App() {
     setMobileStep(1);
   };
 
+  const handleResetImage = () => {
+    setSelectedImageFile(null);
+    setOriginalImageUrl(null);
+    setConvertedImageUrl(null);
+    setImageConvertedBytes(null);
+    setImageConvertDone(false);
+    setIsConvertingImage(false);
+    setTargetWidth('');
+    setTargetHeight('');
+    setScalePct(100);
+    setMobileStep(1);
+  };
+
   const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB limit
 
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith('video/')) {
+      // If user dropped an image while in video mode, offer to switch
+      if (file.type.startsWith('image/')) {
+        setAppMode('image');
+        handleImageFileChange(file);
+        return;
+      }
       alert('Please select a valid video file (MP4, MOV, WebM, etc.)');
       return;
     }
@@ -226,16 +317,209 @@ export function App() {
     setMobileStep(2);
   };
 
+  // Image file handler
+  const handleImageFileChange = (file: File) => {
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|tiff|tif|ico|avif|svg|heic)$/i.test(file.name);
+    if (!isImage) {
+      alert('Please select a valid image file (JPG, PNG, WEBP, GIF, BMP, TIFF, ICO, AVIF, SVG, etc.)');
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      alert('Image size exceeds 100 MB limit.');
+      return;
+    }
+
+    setSelectedImageFile(file);
+    setImageFileName(file.name);
+    setImageOriginalBytes(file.size);
+    setConvertedImageUrl(null);
+    setImageConvertedBytes(null);
+    setImageConvertDone(false);
+
+    // Auto-pick a sensible target format different from current
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    if (ext === 'jpg' || ext === 'jpeg') {
+      setTargetFormat('png');
+    } else if (ext === 'png') {
+      setTargetFormat('webp');
+    } else {
+      setTargetFormat('png');
+    }
+
+    const url = URL.createObjectURL(file);
+    setOriginalImageUrl(url);
+
+    // Read natural dimensions
+    const img = new window.Image();
+    img.onload = () => {
+      setImgOrigWidth(img.naturalWidth);
+      setImgOrigHeight(img.naturalHeight);
+      setTargetWidth(img.naturalWidth);
+      setTargetHeight(img.naturalHeight);
+    };
+    img.src = url;
+
+    setMobileStep(2);
+  };
+
+  const handleScalePresetClick = (pct: number) => {
+    setScalePct(pct);
+    if (imgOrigWidth > 0 && imgOrigHeight > 0) {
+      if (pct === 100) {
+        setTargetWidth(imgOrigWidth);
+        setTargetHeight(imgOrigHeight);
+      } else {
+        const factor = pct / 100;
+        setTargetWidth(Math.round(imgOrigWidth * factor));
+        setTargetHeight(Math.round(imgOrigHeight * factor));
+      }
+    }
+  };
+
+  const handleWidthChange = (val: string) => {
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num <= 0) {
+      setTargetWidth('');
+      return;
+    }
+    setTargetWidth(num);
+    if (keepAspectRatio && imgOrigWidth > 0 && imgOrigHeight > 0) {
+      const aspect = imgOrigHeight / imgOrigWidth;
+      setTargetHeight(Math.round(num * aspect));
+    }
+  };
+
+  const handleHeightChange = (val: string) => {
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num <= 0) {
+      setTargetHeight('');
+      return;
+    }
+    setTargetHeight(num);
+    if (keepAspectRatio && imgOrigWidth > 0 && imgOrigHeight > 0) {
+      const aspect = imgOrigWidth / imgOrigHeight;
+      setTargetWidth(Math.round(num * aspect));
+    }
+  };
+
+  const handleStartImageConversion = async () => {
+    if (!selectedImageFile) {
+      alert('Please upload an image file first!');
+      return;
+    }
+
+    setIsConvertingImage(true);
+    setImageConvertDone(false);
+    setImageConvertStatus('Converting image with Rust engine...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedImageFile);
+      formData.append('format', targetFormat);
+      formData.append('quality', imageQuality.toString());
+      if (targetWidth && typeof targetWidth === 'number' && targetWidth > 0) {
+        formData.append('width', targetWidth.toString());
+      }
+      if (targetHeight && typeof targetHeight === 'number' && targetHeight > 0) {
+        formData.append('height', targetHeight.toString());
+      }
+      formData.append('keepAspectRatio', keepAspectRatio.toString());
+
+      const res = await fetch(`${API_BASE_URL}/api/convert-image`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Image conversion failed');
+      }
+
+      const data = await res.json();
+      if (data.success && data.converted_url) {
+        const downloadUrl = data.converted_url.startsWith('http')
+          ? data.converted_url
+          : `${API_BASE_URL}${data.converted_url}`;
+
+        setConvertedImageUrl(downloadUrl);
+        setImageConvertedBytes(data.converted_size_bytes);
+        setImageConvertDone(true);
+        setIsConvertingImage(false);
+        setMobileStep(3);
+
+        const newLocalComp = parseInt(localStorage.getItem('vidshrink_videos_compressed') || '0', 10) + 1;
+        localStorage.setItem('vidshrink_videos_compressed', newLocalComp.toString());
+        setVideosCompressedCount(newLocalComp);
+        fetchStats();
+      } else {
+        throw new Error('Conversion output not received');
+      }
+    } catch (err: any) {
+      console.error('Image conversion error:', err);
+      alert(`Image conversion failed: ${err?.message || err}`);
+      setIsConvertingImage(false);
+    }
+  };
+
+  const handleDownloadConvertedImage = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!convertedImageUrl) {
+      alert('No converted image available!');
+      return;
+    }
+
+    try {
+      const res = await fetch(convertedImageUrl);
+      if (!res.ok) throw new Error('Failed downloading converted file');
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const stem = imageFileName.substring(0, imageFileName.lastIndexOf('.')) || imageFileName;
+      const downloadName = `${stem}.${targetFormat}`;
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (err) {
+      const stem = imageFileName.substring(0, imageFileName.lastIndexOf('.')) || imageFileName;
+      const downloadName = `${stem}.${targetFormat}`;
+      const link = document.createElement('a');
+      link.href = convertedImageUrl;
+      link.download = downloadName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFileChange(file);
+    if (file) {
+      if (appMode === 'image') {
+        handleImageFileChange(file);
+      } else {
+        handleFileChange(file);
+      }
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) handleFileChange(file);
+    if (file) {
+      if (appMode === 'image' || file.type.startsWith('image/')) {
+        setAppMode('image');
+        handleImageFileChange(file);
+      } else {
+        handleFileChange(file);
+      }
+    }
   };
 
   const pollJobStatus = async (jobId: string) => {
@@ -352,13 +636,13 @@ export function App() {
   const handleDownloadCompressed = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     if (!compressedVideoUrl) {
-      alert("No compressed video file available yet!");
+      alert('No compressed video file available yet!');
       return;
     }
 
     try {
       const res = await fetch(compressedVideoUrl);
-      if (!res.ok) throw new Error("Failed fetching video file");
+      if (!res.ok) throw new Error('Failed fetching video file');
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
 
@@ -404,12 +688,14 @@ export function App() {
     }
   };
 
+  const isSelectedFormatLossy = IMAGE_FORMATS.find(f => f.key === targetFormat)?.isLossy;
+
   return (
     <div className="app-container">
       {/* App Header */}
       <header className="app-header">
         <div className="header-left">
-          <div className="brand-logo" onClick={() => setCustomVideoUrl(null)}>
+          <div className="brand-logo" onClick={() => { setCustomVideoUrl(null); setOriginalImageUrl(null); }}>
             VIDSHRINK <span className="brand-badge" style={{ background: '#166534', color: '#DCFCE7' }}>100% FREE</span>
           </div>
           <div className="nav-item" onClick={() => setShowHowToUse(true)}>
@@ -426,17 +712,40 @@ export function App() {
           <span className="cred-dot">•</span>
           <div className="cred-item">
             <Video size={14} style={{ color: '#16A34A' }} />
-            <span><strong>{videosCompressedCount.toLocaleString()}</strong> Compressed</span>
+            <span><strong>{videosCompressedCount.toLocaleString()}</strong> Processed</span>
           </div>
         </div>
 
         <div className="header-right">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: isRustEngineConnected ? '#166534' : '#9A3412', background: isRustEngineConnected ? '#F0FDF4' : '#FFEDD5', padding: '4px 10px', borderRadius: 9999, border: `1px solid ${isRustEngineConnected ? '#BBF7D0' : '#FED7AA'}` }}>
             <Cpu size={14} />
-            {isRustEngineConnected ? 'Decoupled Worker Queue Active' : 'Browser Preview Mode'}
+            {isRustEngineConnected ? 'Rust High-Speed Engine Active' : 'Preview Mode'}
           </div>
         </div>
       </header>
+
+      {/* Mode Switcher Bar */}
+      <div className="mode-switcher-bar">
+        <div className="mode-pills-wrapper">
+          <button
+            type="button"
+            className={`mode-pill-btn ${appMode === 'video' ? 'active' : ''}`}
+            onClick={() => setAppMode('video')}
+          >
+            <Video size={16} style={{ color: appMode === 'video' ? '#0066FF' : '#64748B' }} />
+            <span>Video Compressor</span>
+          </button>
+          <button
+            type="button"
+            className={`mode-pill-btn ${appMode === 'image' ? 'active' : ''}`}
+            onClick={() => setAppMode('image')}
+          >
+            <ImageIcon size={16} style={{ color: appMode === 'image' ? '#0066FF' : '#64748B' }} />
+            <span>Image Converter</span>
+            <span className="mode-pill-badge">ALL FORMATS</span>
+          </button>
+        </div>
+      </div>
 
       {/* How to Use Modal */}
       {showHowToUse && (
@@ -445,7 +754,7 @@ export function App() {
             <div className="modal-header">
               <h3 className="modal-title">
                 <HelpCircle size={20} style={{ color: '#0066FF' }} />
-                How to Use VidShrink
+                How to Use VidShrink & Image Converter
               </h3>
               <button className="modal-close-btn" onClick={() => setShowHowToUse(false)}>
                 <X size={18} />
@@ -456,31 +765,31 @@ export function App() {
               <div className="step-card">
                 <div className="step-num">1</div>
                 <div className="step-content">
-                  <h4>Upload Your Video</h4>
-                  <p>Drag and drop multi-gigabyte MP4, MOV, or WebM files into the dropzone. Uploads stream safely chunk-by-chunk.</p>
+                  <h4>Choose Your Mode & Upload</h4>
+                  <p>Select <strong>Video Compressor</strong> or <strong>Image Converter</strong> at the top. Drag & drop any video or image file (JPG, PNG, WEBP, GIF, BMP, TIFF, AVIF, SVG, etc.).</p>
                 </div>
               </div>
 
               <div className="step-card">
                 <div className="step-num">2</div>
                 <div className="step-content">
-                  <h4>Pick Your Trade-off Preset</h4>
-                  <p>Choose between <strong>Visually Lossless</strong>, <strong>Balanced</strong>, or <strong>Maximum Compression</strong> presets.</p>
+                  <h4>Select Format, Quality & Dimensions</h4>
+                  <p>Pick target format (e.g. JPG to PNG, PNG to WEBP, etc.), adjust quality slider (1-100), or resize with custom/preset dimensions.</p>
                 </div>
               </div>
 
               <div className="step-card">
                 <div className="step-num">3</div>
                 <div className="step-content">
-                  <h4>Redis Decoupled Queue</h4>
-                  <p>Jobs get enqueued immediately so the site never blocks. Fixed core worker pool processes encodes asynchronously.</p>
+                  <h4>Compare & Download Instantly</h4>
+                  <p>Use the interactive Before & After slider to compare visual quality and download your converted file with high compression savings.</p>
                 </div>
               </div>
             </div>
 
             <div className="modal-footer">
               <button className="btn-modal-primary" onClick={() => setShowHowToUse(false)}>
-                Got it, let's compress!
+                Got it, let's go!
               </button>
             </div>
           </div>
@@ -567,7 +876,7 @@ export function App() {
                       <Video size={24} />
                     </div>
                     <div className="stat-info">
-                      <span className="stat-label">Videos Compressed</span>
+                      <span className="stat-label">Total Media Converted</span>
                       <span className="stat-number">{videosCompressedCount}</span>
                     </div>
                   </div>
@@ -578,464 +887,866 @@ export function App() {
         </div>
       )}
 
-      {/* Main Application Body */}
-      <main className={`app-body mobile-step-${mobileStep}`}>
-        {/* Mobile Step Wizard */}
-        <div className="mobile-step-wizard">
-          <div
-            className={`wizard-step ${mobileStep === 1 ? 'active' : ''} ${mobileStep > 1 ? 'completed' : ''}`}
-            onClick={() => setMobileStep(1)}
-          >
-            <div className="step-badge">{mobileStep > 1 ? <Check size={12} /> : '1'}</div>
-            <span className="step-label">1. Select</span>
-          </div>
-          <div className="wizard-line" />
-          <div
-            className={`wizard-step ${mobileStep === 2 ? 'active' : ''} ${mobileStep > 2 ? 'completed' : ''}`}
-            onClick={() => { if (customVideoUrl) setMobileStep(2); }}
-          >
-            <div className="step-badge">{mobileStep > 2 ? <Check size={12} /> : '2'}</div>
-            <span className="step-label">2. Presets</span>
-          </div>
-          <div className="wizard-line" />
-          <div
-            className={`wizard-step ${mobileStep === 3 ? 'active' : ''}`}
-            onClick={() => { if (isCompressing || compressDone) setMobileStep(3); }}
-          >
-            <div className="step-badge">3</div>
-            <span className="step-label">3. Download</span>
-          </div>
-        </div>
-
-        {/* Left Options Panel */}
-        <section className="options-panel">
-          <h2 className="options-title">
-            <ChevronLeft size={24} className="options-title-icon" onClick={() => setCustomVideoUrl(null)} />
-            Compression Options
-          </h2>
-
-          {/* Resolution Card */}
-          <div className="setting-card">
-            <div className="setting-label">Resolution</div>
+      {/* ══════════════════════════════════════════════════════════
+         IMAGE CONVERTER INTERFACE
+         ══════════════════════════════════════════════════════════ */}
+      {appMode === 'image' && (
+        <main className={`app-body mobile-step-${mobileStep}`}>
+          {/* Mobile Step Wizard */}
+          <div className="mobile-step-wizard">
             <div
-              className="dropdown-trigger"
-              onClick={() => setIsResDropdownOpen(!isResDropdownOpen)}
+              className={`wizard-step ${mobileStep === 1 ? 'active' : ''} ${mobileStep > 1 ? 'completed' : ''}`}
+              onClick={() => setMobileStep(1)}
             >
-              <span className="dropdown-text">{selectedResolution.name.split(' ')[0]}</span>
-              <ChevronDown size={18} style={{ color: '#64748B' }} />
+              <div className="step-badge">{mobileStep > 1 ? <Check size={12} /> : '1'}</div>
+              <span className="step-label">1. Select</span>
             </div>
+            <div className="wizard-line" />
+            <div
+              className={`wizard-step ${mobileStep === 2 ? 'active' : ''} ${mobileStep > 2 ? 'completed' : ''}`}
+              onClick={() => { if (originalImageUrl) setMobileStep(2); }}
+            >
+              <div className="step-badge">{mobileStep > 2 ? <Check size={12} /> : '2'}</div>
+              <span className="step-label">2. Options</span>
+            </div>
+            <div className="wizard-line" />
+            <div
+              className={`wizard-step ${mobileStep === 3 ? 'active' : ''}`}
+              onClick={() => { if (isConvertingImage || imageConvertDone) setMobileStep(3); }}
+            >
+              <div className="step-badge">3</div>
+              <span className="step-label">3. Download</span>
+            </div>
+          </div>
 
-            {isResDropdownOpen && (
-              <div className="dropdown-menu">
-                {RESOLUTIONS.map((res) => (
-                  <div
-                    key={res.name}
-                    className={`dropdown-option ${res.name === selectedResolution.name ? 'active' : ''}`}
-                    onClick={() => {
-                      setSelectedResolution(res);
-                      setIsResDropdownOpen(false);
-                    }}
+          {/* Left Options Panel (Image) */}
+          <section className="options-panel">
+            <h2 className="options-title">
+              <ChevronLeft size={24} className="options-title-icon" onClick={handleResetImage} />
+              Image Conversion
+            </h2>
+
+            {/* Target Format Card */}
+            <div className="setting-card">
+              <div className="setting-card-header">
+                <span className="setting-label">Convert To Format</span>
+                <span style={{ fontSize: 12, color: '#0066FF', fontWeight: 600 }}>.{targetFormat.toUpperCase()}</span>
+              </div>
+              
+              <div className="format-grid">
+                {IMAGE_FORMATS.map((fmt) => (
+                  <button
+                    key={fmt.key}
+                    type="button"
+                    className={`format-btn ${targetFormat === fmt.key ? 'active' : ''}`}
+                    onClick={() => setTargetFormat(fmt.key)}
                   >
-                    <span>{res.name}</span>
-                    {res.name === selectedResolution.name && <Check size={14} />}
-                  </div>
+                    <span className="format-btn-name">{fmt.name}</span>
+                    <span className="format-btn-desc">{fmt.key.toUpperCase()}</span>
+                  </button>
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Quality Trade-off CRF Presets */}
-          <div className="setting-card">
-            <div className="setting-card-header">
-              <span className="setting-label">Quality Preset Trade-off</span>
-            </div>
-            <div className="quality-presets-grid" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-              <button
-                type="button"
-                className={`preset-btn ${qualityPreset === 'visually-lossless' ? 'active' : ''}`}
-                onClick={() => setQualityPreset('visually-lossless')}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: `1.5px solid ${qualityPreset === 'visually-lossless' ? '#0066FF' : '#CBD5E1'}`,
-                  background: qualityPreset === 'visually-lossless' ? '#EFF6FF' : '#FFF',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>✨ Visually Lossless</div>
-                <div style={{ fontSize: 11, color: '#64748B' }}>Highest visual fidelity (CRF 18-24)</div>
-              </button>
-
-              <button
-                type="button"
-                className={`preset-btn ${qualityPreset === 'balanced' ? 'active' : ''}`}
-                onClick={() => setQualityPreset('balanced')}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: `1.5px solid ${qualityPreset === 'balanced' ? '#0066FF' : '#CBD5E1'}`,
-                  background: qualityPreset === 'balanced' ? '#EFF6FF' : '#FFF',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>⚡ Balanced (Recommended)</div>
-                <div style={{ fontSize: 11, color: '#64748B' }}>Optimal size vs quality (CRF 23-32)</div>
-              </button>
-
-              <button
-                type="button"
-                className={`preset-btn ${qualityPreset === 'max-compression' ? 'active' : ''}`}
-                onClick={() => setQualityPreset('max-compression')}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: `1.5px solid ${qualityPreset === 'max-compression' ? '#0066FF' : '#CBD5E1'}`,
-                  background: qualityPreset === 'max-compression' ? '#EFF6FF' : '#FFF',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>📦 Maximum Compression</div>
-                <div style={{ fontSize: 11, color: '#64748B' }}>Smallest payload file size (CRF 28-40)</div>
-              </button>
             </div>
 
-            <div
-              className="advance-toggle"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              style={{ marginTop: 12 }}
-            >
-              <span>{showAdvanced ? '- Hide Advanced Settings' : '+ Advanced Codec Options'}</span>
-            </div>
-
-            {showAdvanced && (
-              <div className="advanced-panel" style={{ marginTop: 8 }}>
-                <div className="form-group">
-                  <label className="form-label">Encoder Codec</label>
-                  <select
-                    className="form-select"
-                    value={codec}
-                    onChange={(e) => setCodec(e.target.value as any)}
-                  >
-                    <option value="h265">H.265 / HEVC (Recommended)</option>
-                    <option value="h264">H.264 / AVC (High Compatibility)</option>
-                    <option value="av1">AV1 (Next-Gen Ultra)</option>
-                  </select>
-                </div>
-
-                <div className="form-group" style={{ marginTop: 8 }}>
-                  <label className="form-label">Audio Bitrate</label>
-                  <select
-                    className="form-select"
-                    value={audioBitrate}
-                    onChange={(e) => setAudioBitrate(Number(e.target.value))}
-                  >
-                    <option value={128}>128 kbps (Standard)</option>
-                    <option value={192}>192 kbps (High Quality)</option>
-                    <option value={320}>320 kbps (Lossless)</option>
-                  </select>
+            {/* Quality Slider (for lossy formats) */}
+            {isSelectedFormatLossy && (
+              <div className="setting-card">
+                <div className="quality-slider-container">
+                  <div className="quality-slider-header">
+                    <span>Quality / Compression</span>
+                    <span className="quality-val-badge">{imageQuality}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={imageQuality}
+                    onChange={(e) => setImageQuality(Number(e.target.value))}
+                    className="range-input-custom"
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#94A3B8' }}>
+                    <span>Max Savings (10%)</span>
+                    <span>Balanced (85%)</span>
+                    <span>Lossless (100%)</span>
+                  </div>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Size Summary */}
-          <div className="summary-block">
-            <span className="summary-label">Estimated Output Size</span>
-            <div className="summary-size-wrapper">
-              <span className="summary-size-main">{calculatedReducedSizeMB}MB</span>
-              {originalSizeBytes > 0 && <span className="summary-size-old">{originalSizeMB}MB</span>}
+            {/* Resize & Dimensions Card */}
+            <div className="setting-card">
+              <div className="setting-card-header">
+                <span className="setting-label">Scale & Dimensions</span>
+                {imgOrigWidth > 0 && (
+                  <span style={{ fontSize: 11, color: '#64748B' }}>Original: {imgOrigWidth}×{imgOrigHeight}</span>
+                )}
+              </div>
+
+              <div className="scale-presets-row">
+                {[100, 75, 50, 25].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    className={`scale-preset-btn ${scalePct === pct ? 'active' : ''}`}
+                    onClick={() => handleScalePresetClick(pct)}
+                  >
+                    {pct === 100 ? 'Original' : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+                <div className="form-group">
+                  <label className="form-label">Width (px)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder={imgOrigWidth ? imgOrigWidth.toString() : 'Width'}
+                    value={targetWidth}
+                    onChange={(e) => handleWidthChange(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Height (px)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder={imgOrigHeight ? imgOrigHeight.toString() : 'Height'}
+                    value={targetHeight}
+                    onChange={(e) => handleHeightChange(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', marginTop: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={keepAspectRatio}
+                  onChange={(e) => setKeepAspectRatio(e.target.checked)}
+                />
+                Maintain aspect ratio
+              </label>
             </div>
-            {originalSizeBytes > 0 && (
-              <span className="summary-savings-tag">
-                Almost {reducedDiffMB}MB saved
-              </span>
-            )}
-          </div>
 
-          {/* Compress Button */}
-          <button
-            className="btn-compress"
-            onClick={handleStartCompression}
-            disabled={isCompressing || !customVideoUrl}
-          >
-            {isCompressing ? (
-              <>
-                <RotateCw size={18} className="animate-spin-fast" />
-                {jobStatusText} ({compressProgress}%)
-              </>
-            ) : compressDone ? (
-              <>
-                <Check size={18} />
-                Compression Complete!
-              </>
+            {/* Size Summary */}
+            <div className="summary-block">
+              <span className="summary-label">
+                {imageConvertDone ? 'Result Output Size' : 'Original Image Size'}
+              </span>
+              <div className="summary-size-wrapper">
+                <span className="summary-size-main">
+                  {imageConvertedFormatted || imageOrigFormatted}
+                </span>
+                {imageConvertedBytes !== null && (
+                  <span className="summary-size-old">{imageOrigFormatted}</span>
+                )}
+              </div>
+              {imageSavingsPct && (
+                <span className="summary-savings-tag">
+                  {parseFloat(imageSavingsPct) >= 0 ? `${imageSavingsPct}% smaller` : `${Math.abs(parseFloat(imageSavingsPct))}% change`}
+                </span>
+              )}
+            </div>
+
+            {/* Convert Button */}
+            <button
+              className="btn-compress"
+              onClick={handleStartImageConversion}
+              disabled={isConvertingImage || !originalImageUrl}
+            >
+              {isConvertingImage ? (
+                <>
+                  <RotateCw size={18} className="animate-spin-fast" />
+                  {imageConvertStatus || 'Converting Image...'}
+                </>
+              ) : imageConvertDone ? (
+                <>
+                  <Check size={18} />
+                  Conversion Ready!
+                </>
+              ) : (
+                <>
+                  Convert to {targetFormat.toUpperCase()}
+                  <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+
+            {originalImageUrl && (
+              <div className="selected-file-card">
+                <div className="file-info-group">
+                  <div className="file-icon-badge">
+                    <ImageIcon size={18} />
+                  </div>
+                  <div className="file-details">
+                    <span className="file-name-text" title={imageFileName}>{imageFileName}</span>
+                    <span className="file-size-badge">{imageOrigFormatted}</span>
+                  </div>
+                </div>
+                <button
+                  className="btn-change-video"
+                  onClick={() => imageFileInputRef.current?.click()}
+                >
+                  <Upload size={12} />
+                  Change
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={imageFileInputRef}
+              type="file"
+              accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tiff,.tif,.ico,.avif,.svg,.heic"
+              onChange={handleFileInputChange}
+              style={{ display: 'none' }}
+            />
+
+            {imageConvertDone && (
+              <div className="thank-you-card">
+                <div className="thank-you-header">
+                  <div className="thank-you-badge">
+                    <Sparkles size={24} style={{ color: '#166534' }} />
+                  </div>
+                  <h3 className="thank-you-title">🎉 Converted to {targetFormat.toUpperCase()}</h3>
+                  <p className="thank-you-subtext">
+                    From <strong>{imageOrigFormatted}</strong> to <strong>{imageConvertedFormatted}</strong>
+                  </p>
+                </div>
+
+                <div className="thank-you-actions">
+                  <button
+                    onClick={handleDownloadConvertedImage}
+                    className="btn-download-primary"
+                  >
+                    <Download size={18} />
+                    Download {targetFormat.toUpperCase()} ({imageConvertedFormatted})
+                  </button>
+                  <button
+                    onClick={handleResetImage}
+                    className="btn-reset-step"
+                  >
+                    <RotateCw size={14} />
+                    Convert Another Image
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Right Preview Card (Image) */}
+          <section className="preview-card">
+            {!originalImageUrl ? (
+              <div
+                className={`upload-dropzone ${isDraggingOver ? 'dragging' : ''}`}
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
+                onDragLeave={() => setIsDraggingOver(false)}
+                onDrop={handleDrop}
+                onClick={() => imageFileInputRef.current?.click()}
+              >
+                <div className="upload-icon-wrapper" style={{ background: '#EFF6FF', color: '#0066FF' }}>
+                  <ImageIcon size={36} />
+                </div>
+                <div className="upload-headline">Upload image to convert to any format</div>
+                <div className="upload-subtext">
+                  Supports JPG, PNG, WEBP, AVIF, GIF, BMP, TIFF, ICO, SVG, HEIC & more!
+                </div>
+
+                <div className="dropzone-credibility-bar">
+                  <div className="cred-stat-item">
+                    <Eye size={15} style={{ color: '#0066FF' }} />
+                    <span><strong>{pageViewsCount.toLocaleString()}</strong> Page Visitors</span>
+                  </div>
+                  <div className="cred-stat-divider">|</div>
+                  <div className="cred-stat-item">
+                    <ImageIcon size={15} style={{ color: '#16A34A' }} />
+                    <span><strong>{videosCompressedCount.toLocaleString()}</strong> Media Converted</span>
+                  </div>
+                </div>
+
+                <button className="btn-select-file">
+                  Select Image File
+                </button>
+                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
+                  Convert JPG ➔ PNG, PNG ➔ WEBP, WEBP ➔ JPG or Any Format!
+                </div>
+              </div>
             ) : (
               <>
-                Compress File (Rust FFmpeg)
-                <ArrowRight size={18} />
+                <div
+                  ref={imageSplitContainerRef}
+                  className="image-split-container"
+                  onMouseDown={handleImageMouseDown}
+                  onMouseUp={handleImageMouseUp}
+                  onMouseLeave={handleImageMouseUp}
+                  onMouseMove={handleImageMouseMove}
+                >
+                  <div className="split-badge badge-after">
+                    {convertedImageUrl ? `◀ CONVERTED (.${targetFormat.toUpperCase()})` : `◀ TARGET (.${targetFormat.toUpperCase()})`}
+                  </div>
+                  <div className="split-badge badge-before">ORIGINAL ({imageFileName.split('.').pop()?.toUpperCase()}) ▶</div>
+
+                  {/* Left layer (Original) */}
+                  <img
+                    src={originalImageUrl}
+                    alt="Original"
+                    className="image-preview-img"
+                  />
+
+                  {/* Right layer (Converted / Target) */}
+                  <div
+                    className="split-layer-right"
+                    style={{ clipPath: `polygon(${imageSplitPos}% 0, 100% 0, 100% 100%, ${imageSplitPos}% 100%)` }}
+                  >
+                    <img
+                      src={convertedImageUrl || originalImageUrl}
+                      alt="Converted Preview"
+                      className="image-preview-img"
+                    />
+                  </div>
+
+                  {/* Split slider line */}
+                  <div
+                    className="split-divider-line"
+                    style={{ left: `${imageSplitPos}%` }}
+                  >
+                    <div className="split-handle-btn">
+                      <span className="handle-label handle-label-after">AFTER</span>
+                      ‹ ›
+                      <span className="handle-label handle-label-before">BEFORE</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="info-stats-row">
+                  <div className="info-stat-group">
+                    <span className="info-stat-title">Source ({imageFileName.split('.').pop()?.toUpperCase()})</span>
+                    <span className="info-stat-sub">
+                      {imgOrigWidth > 0 ? `${imgOrigWidth}×${imgOrigHeight} • ` : ''}{imageOrigFormatted}
+                    </span>
+                  </div>
+
+                  {imageConvertDone && convertedImageUrl && (
+                    <button
+                      onClick={handleDownloadConvertedImage}
+                      className="btn-download-success"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', fontSize: 13, cursor: 'pointer' }}
+                    >
+                      <Download size={14} />
+                      Download {targetFormat.toUpperCase()} ({imageConvertedFormatted})
+                    </button>
+                  )}
+
+                  <div className="info-stat-group" style={{ textAlign: 'right' }}>
+                    <span className="info-stat-title">
+                      Converted ({targetFormat.toUpperCase()})
+                    </span>
+                    <span className="info-stat-sub">
+                      {targetWidth && targetHeight ? `${targetWidth}×${targetHeight} • ` : ''}
+                      {imageConvertedFormatted || 'Ready to Convert'}
+                    </span>
+                  </div>
+                </div>
               </>
             )}
-          </button>
+          </section>
+        </main>
+      )}
 
-          {customVideoUrl && (
-            <div className="selected-file-card">
-              <div className="file-info-group">
-                <div className="file-icon-badge">
-                  <Film size={18} />
+      {/* ══════════════════════════════════════════════════════════
+         VIDEO COMPRESSOR INTERFACE (Original)
+         ══════════════════════════════════════════════════════════ */}
+      {appMode === 'video' && (
+        <main className={`app-body mobile-step-${mobileStep}`}>
+          {/* Mobile Step Wizard */}
+          <div className="mobile-step-wizard">
+            <div
+              className={`wizard-step ${mobileStep === 1 ? 'active' : ''} ${mobileStep > 1 ? 'completed' : ''}`}
+              onClick={() => setMobileStep(1)}
+            >
+              <div className="step-badge">{mobileStep > 1 ? <Check size={12} /> : '1'}</div>
+              <span className="step-label">1. Select</span>
+            </div>
+            <div className="wizard-line" />
+            <div
+              className={`wizard-step ${mobileStep === 2 ? 'active' : ''} ${mobileStep > 2 ? 'completed' : ''}`}
+              onClick={() => { if (customVideoUrl) setMobileStep(2); }}
+            >
+              <div className="step-badge">{mobileStep > 2 ? <Check size={12} /> : '2'}</div>
+              <span className="step-label">2. Presets</span>
+            </div>
+            <div className="wizard-line" />
+            <div
+              className={`wizard-step ${mobileStep === 3 ? 'active' : ''}`}
+              onClick={() => { if (isCompressing || compressDone) setMobileStep(3); }}
+            >
+              <div className="step-badge">3</div>
+              <span className="step-label">3. Download</span>
+            </div>
+          </div>
+
+          {/* Left Options Panel */}
+          <section className="options-panel">
+            <h2 className="options-title">
+              <ChevronLeft size={24} className="options-title-icon" onClick={() => setCustomVideoUrl(null)} />
+              Compression Options
+            </h2>
+
+            {/* Resolution Card */}
+            <div className="setting-card">
+              <div className="setting-label">Resolution</div>
+              <div
+                className="dropdown-trigger"
+                onClick={() => setIsResDropdownOpen(!isResDropdownOpen)}
+              >
+                <span className="dropdown-text">{selectedResolution.name.split(' ')[0]}</span>
+                <ChevronDown size={18} style={{ color: '#64748B' }} />
+              </div>
+
+              {isResDropdownOpen && (
+                <div className="dropdown-menu">
+                  {RESOLUTIONS.map((res) => (
+                    <div
+                      key={res.name}
+                      className={`dropdown-option ${res.name === selectedResolution.name ? 'active' : ''}`}
+                      onClick={() => {
+                        setSelectedResolution(res);
+                        setIsResDropdownOpen(false);
+                      }}
+                    >
+                      <span>{res.name}</span>
+                      {res.name === selectedResolution.name && <Check size={14} />}
+                    </div>
+                  ))}
                 </div>
-                <div className="file-details">
-                  <span className="file-name-text" title={fileName}>{fileName}</span>
-                  <span className="file-size-badge">{originalSizeMB} MB</span>
+              )}
+            </div>
+
+            {/* Quality Trade-off CRF Presets */}
+            <div className="setting-card">
+              <div className="setting-card-header">
+                <span className="setting-label">Quality Preset Trade-off</span>
+              </div>
+              <div className="quality-presets-grid" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className={`preset-btn ${qualityPreset === 'visually-lossless' ? 'active' : ''}`}
+                  onClick={() => setQualityPreset('visually-lossless')}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: `1.5px solid ${qualityPreset === 'visually-lossless' ? '#0066FF' : '#CBD5E1'}`,
+                    background: qualityPreset === 'visually-lossless' ? '#EFF6FF' : '#FFF',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>✨ Visually Lossless</div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>Highest visual fidelity (CRF 18-24)</div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`preset-btn ${qualityPreset === 'balanced' ? 'active' : ''}`}
+                  onClick={() => setQualityPreset('balanced')}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: `1.5px solid ${qualityPreset === 'balanced' ? '#0066FF' : '#CBD5E1'}`,
+                    background: qualityPreset === 'balanced' ? '#EFF6FF' : '#FFF',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>⚡ Balanced (Recommended)</div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>Optimal size vs quality (CRF 23-32)</div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`preset-btn ${qualityPreset === 'max-compression' ? 'active' : ''}`}
+                  onClick={() => setQualityPreset('max-compression')}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: `1.5px solid ${qualityPreset === 'max-compression' ? '#0066FF' : '#CBD5E1'}`,
+                    background: qualityPreset === 'max-compression' ? '#EFF6FF' : '#FFF',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>📦 Maximum Compression</div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>Smallest payload file size (CRF 28-40)</div>
+                </button>
+              </div>
+
+              <div
+                className="advance-toggle"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                style={{ marginTop: 12 }}
+              >
+                <span>{showAdvanced ? '- Hide Advanced Settings' : '+ Advanced Codec Options'}</span>
+              </div>
+
+              {showAdvanced && (
+                <div className="advanced-panel" style={{ marginTop: 8 }}>
+                  <div className="form-group">
+                    <label className="form-label">Encoder Codec</label>
+                    <select
+                      className="form-select"
+                      value={codec}
+                      onChange={(e) => setCodec(e.target.value as any)}
+                    >
+                      <option value="h265">H.265 / HEVC (Recommended)</option>
+                      <option value="h264">H.264 / AVC (High Compatibility)</option>
+                      <option value="av1">AV1 (Next-Gen Ultra)</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: 8 }}>
+                    <label className="form-label">Audio Bitrate</label>
+                    <select
+                      className="form-select"
+                      value={audioBitrate}
+                      onChange={(e) => setAudioBitrate(Number(e.target.value))}
+                    >
+                      <option value={128}>128 kbps (Standard)</option>
+                      <option value={192}>192 kbps (High Quality)</option>
+                      <option value={320}>320 kbps (Lossless)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Size Summary */}
+            <div className="summary-block">
+              <span className="summary-label">Estimated Output Size</span>
+              <div className="summary-size-wrapper">
+                <span className="summary-size-main">{calculatedReducedSizeMB}MB</span>
+                {originalSizeBytes > 0 && <span className="summary-size-old">{originalSizeMB}MB</span>}
+              </div>
+              {originalSizeBytes > 0 && (
+                <span className="summary-savings-tag">
+                  Almost {reducedDiffMB}MB saved
+                </span>
+              )}
+            </div>
+
+            {/* Compress Button */}
+            <button
+              className="btn-compress"
+              onClick={handleStartCompression}
+              disabled={isCompressing || !customVideoUrl}
+            >
+              {isCompressing ? (
+                <>
+                  <RotateCw size={18} className="animate-spin-fast" />
+                  {jobStatusText} ({compressProgress}%)
+                </>
+              ) : compressDone ? (
+                <>
+                  <Check size={18} />
+                  Compression Complete!
+                </>
+              ) : (
+                <>
+                  Compress File (Rust FFmpeg)
+                  <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+
+            {customVideoUrl && (
+              <div className="selected-file-card">
+                <div className="file-info-group">
+                  <div className="file-icon-badge">
+                    <Film size={18} />
+                  </div>
+                  <div className="file-details">
+                    <span className="file-name-text" title={fileName}>{fileName}</span>
+                    <span className="file-size-badge">{originalSizeMB} MB</span>
+                  </div>
+                </div>
+                <button
+                  className="btn-change-video"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload size={12} />
+                  Change Video
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*"
+              onChange={handleFileInputChange}
+              style={{ display: 'none' }}
+            />
+
+            {compressDone && (
+              <div className="thank-you-card">
+                <div className="thank-you-header">
+                  <div className="thank-you-badge">
+                    <Sparkles size={24} style={{ color: '#166534' }} />
+                  </div>
+                  <h3 className="thank-you-title">🎉 Video Encoded Successfully</h3>
+                  <p className="thank-you-subtext">
+                    Reduced from <strong>{originalSizeMB} MB</strong> to <strong>{calculatedReducedSizeMB} MB</strong>
+                  </p>
+                </div>
+
+                <div className="thank-you-actions">
+                  <button
+                    onClick={handleDownloadCompressed}
+                    className="btn-download-primary"
+                  >
+                    <Sparkles size={18} />
+                    Download MP4 ({calculatedReducedSizeMB}MB)
+                  </button>
+                  <button
+                    onClick={handleResetAll}
+                    className="btn-reset-step"
+                  >
+                    <RotateCw size={14} />
+                    Compress Another Video
+                  </button>
                 </div>
               </div>
-              <button
-                className="btn-change-video"
+            )}
+          </section>
+
+          {/* Right Preview Card */}
+          <section className="preview-card">
+            {!customVideoUrl ? (
+              <div
+                className={`upload-dropzone ${isDraggingOver ? 'dragging' : ''}`}
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
+                onDragLeave={() => setIsDraggingOver(false)}
+                onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload size={12} />
-                Change Video
-              </button>
-            </div>
-          )}
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            onChange={handleFileInputChange}
-            style={{ display: 'none' }}
-          />
-
-          {compressDone && (
-            <div className="thank-you-card">
-              <div className="thank-you-header">
-                <div className="thank-you-badge">
-                  <Sparkles size={24} style={{ color: '#166534' }} />
+                <div className="upload-icon-wrapper">
+                  <UploadCloud size={36} />
                 </div>
-                <h3 className="thank-you-title">🎉 Video Encoded Successfully</h3>
-                <p className="thank-you-subtext">
-                  Reduced from <strong>{originalSizeMB} MB</strong> to <strong>{calculatedReducedSizeMB} MB</strong>
-                </p>
-              </div>
+                <div className="upload-headline">Upload your video to compress</div>
+                <div className="upload-subtext">
+                  Upload video files up to 200 MB. Files stream safely to disk in chunks.
+                </div>
 
-              <div className="thank-you-actions">
-                <button
-                  onClick={handleDownloadCompressed}
-                  className="btn-download-primary"
-                >
-                  <Sparkles size={18} />
-                  Download MP4 ({calculatedReducedSizeMB}MB)
+                <div className="dropzone-credibility-bar">
+                  <div className="cred-stat-item">
+                    <Eye size={15} style={{ color: '#0066FF' }} />
+                    <span><strong>{pageViewsCount.toLocaleString()}</strong> Page Visitors</span>
+                  </div>
+                  <div className="cred-stat-divider">|</div>
+                  <div className="cred-stat-item">
+                    <Video size={15} style={{ color: '#16A34A' }} />
+                    <span><strong>{videosCompressedCount.toLocaleString()}</strong> Videos Compressed</span>
+                  </div>
+                </div>
+
+                <button className="btn-select-file">
+                  Select Video File
                 </button>
-                <button
-                  onClick={handleResetAll}
-                  className="btn-reset-step"
-                >
-                  <RotateCw size={14} />
-                  Compress Another Video
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Right Preview Card */}
-        <section className="preview-card">
-          {!customVideoUrl ? (
-            <div
-              className={`upload-dropzone ${isDraggingOver ? 'dragging' : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
-              onDragLeave={() => setIsDraggingOver(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className="upload-icon-wrapper">
-                <UploadCloud size={36} />
-              </div>
-              <div className="upload-headline">Upload your video to compress</div>
-              <div className="upload-subtext">
-                Upload video files up to 200 MB. Files stream safely to disk in chunks.
-              </div>
-
-              <div className="dropzone-credibility-bar">
-                <div className="cred-stat-item">
-                  <Eye size={15} style={{ color: '#0066FF' }} />
-                  <span><strong>{pageViewsCount.toLocaleString()}</strong> Page Visitors</span>
-                </div>
-                <div className="cred-stat-divider">|</div>
-                <div className="cred-stat-item">
-                  <Video size={15} style={{ color: '#16A34A' }} />
-                  <span><strong>{videosCompressedCount.toLocaleString()}</strong> Videos Compressed</span>
+                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
+                  Supports MP4, MOV, AVI, MKV, WebM (Any Resolution)
                 </div>
               </div>
-
-              <button className="btn-select-file">
-                Select Video File
-              </button>
-              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
-                Supports MP4, MOV, AVI, MKV, WebM (Any Resolution)
-              </div>
-            </div>
-          ) : (
-            <>
-              <div
-                ref={splitContainerRef}
-                className="split-view-container"
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onMouseMove={handleMouseMove}
-              >
-                <div className="split-badge badge-after">
-                  {compressedVideoUrl ? '◀ AFTER (Redis FFmpeg Worker Output)' : '◀ AFTER (Preview Filter)'}
-                </div>
-                <div className="split-badge badge-before">BEFORE (Original) ▶</div>
-
-                <video
-                  ref={videoOrigRef}
-                  src={customVideoUrl}
-                  className="split-video-layer"
-                  autoPlay
-                  loop
-                  muted
-                  onLoadedMetadata={(e) => {
-                    setDuration(e.currentTarget.duration || 0);
-                  }}
-                  onTimeUpdate={(e) => {
-                    setCurrentTime(e.currentTarget.currentTime);
-                  }}
-                />
-
+            ) : (
+              <>
                 <div
-                  className="split-layer-right"
-                  style={{ clipPath: `polygon(${splitPos}% 0, 100% 0, 100% 100%, ${splitPos}% 100%)` }}
+                  ref={splitContainerRef}
+                  className="split-view-container"
+                  onMouseDown={handleMouseDown}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                  onMouseMove={handleMouseMove}
                 >
+                  <div className="split-badge badge-after">
+                    {compressedVideoUrl ? '◀ AFTER (Redis FFmpeg Worker Output)' : '◀ AFTER (Preview Filter)'}
+                  </div>
+                  <div className="split-badge badge-before">BEFORE (Original) ▶</div>
+
                   <video
-                    ref={videoCompRef}
-                    src={compressedVideoUrl || customVideoUrl}
-                    className="split-video-right"
+                    ref={videoOrigRef}
+                    src={customVideoUrl}
+                    className="split-video-layer"
                     autoPlay
                     loop
                     muted
+                    onLoadedMetadata={(e) => {
+                      setDuration(e.currentTarget.duration || 0);
+                    }}
+                    onTimeUpdate={(e) => {
+                      setCurrentTime(e.currentTarget.currentTime);
+                    }}
                   />
-                </div>
 
-                <div
-                  className="split-divider-line"
-                  style={{ left: `${splitPos}%` }}
-                >
-                  <div className="split-handle-btn">
-                    <span className="handle-label handle-label-after">AFTER</span>
-                    ‹ ›
-                    <span className="handle-label handle-label-before">BEFORE</span>
+                  <div
+                    className="split-layer-right"
+                    style={{ clipPath: `polygon(${splitPos}% 0, 100% 0, 100% 100%, ${splitPos}% 100%)` }}
+                  >
+                    <video
+                      ref={videoCompRef}
+                      src={compressedVideoUrl || customVideoUrl}
+                      className="split-video-right"
+                      autoPlay
+                      loop
+                      muted
+                    />
+                  </div>
+
+                  <div
+                    className="split-divider-line"
+                    style={{ left: `${splitPos}%` }}
+                  >
+                    <div className="split-handle-btn">
+                      <span className="handle-label handle-label-after">AFTER</span>
+                      ‹ ›
+                      <span className="handle-label handle-label-before">BEFORE</span>
+                    </div>
+                  </div>
+
+                  <div
+                    className="edit-video-badge"
+                    onClick={() => alert("Edit Video Trimmer opened!")}
+                  >
+                    <Scissors size={14} />
+                    Edit Video
                   </div>
                 </div>
 
-                <div
-                  className="edit-video-badge"
-                  onClick={() => alert("Edit Video Trimmer opened!")}
-                >
-                  <Scissors size={14} />
-                  Edit Video
-                </div>
-              </div>
+                <div className="info-stats-row">
+                  <div className="info-stat-group">
+                    <span className="info-stat-title">Source Video</span>
+                    <span className="info-stat-sub">Size: {originalSizeMB}MB</span>
+                  </div>
 
-              <div className="info-stats-row">
-                <div className="info-stat-group">
-                  <span className="info-stat-title">Source Video</span>
-                  <span className="info-stat-sub">Size: {originalSizeMB}MB</span>
+                  {compressDone && compressedVideoUrl && (
+                    <button
+                      onClick={handleDownloadCompressed}
+                      className="btn-download-success"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', fontSize: 13, cursor: 'pointer' }}
+                    >
+                      <Upload size={14} style={{ transform: 'rotate(180deg)' }} />
+                      Download Encoded MP4 ({calculatedReducedSizeMB}MB)
+                    </button>
+                  )}
+
+                  <div className="info-stat-group" style={{ textAlign: 'right' }}>
+                    <span className="info-stat-title">
+                      {compressedVideoUrl ? 'Compressed Video' : 'Compressed Video (Estimated)'}
+                    </span>
+                    <span className="info-stat-sub">Size: {calculatedReducedSizeMB}MB</span>
+                  </div>
                 </div>
 
-                {compressDone && compressedVideoUrl && (
+                <div className="player-controls-bar">
                   <button
-                    onClick={handleDownloadCompressed}
-                    className="btn-download-success"
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', fontSize: 13, cursor: 'pointer' }}
+                    className="btn-play-pause"
+                    onClick={togglePlay}
                   >
-                    <Upload size={14} style={{ transform: 'rotate(180deg)' }} />
-                    Download Encoded MP4 ({calculatedReducedSizeMB}MB)
+                    {isPlaying ? <Pause size={16} /> : <Play size={16} />}
                   </button>
-                )}
 
-                <div className="info-stat-group" style={{ textAlign: 'right' }}>
-                  <span className="info-stat-title">
-                    {compressedVideoUrl ? 'Compressed Video' : 'Compressed Video (Estimated)'}
-                  </span>
-                  <span className="info-stat-sub">Size: {calculatedReducedSizeMB}MB</span>
-                </div>
-              </div>
+                  <span className="player-time">{formatTime(currentTime)}</span>
 
-              <div className="player-controls-bar">
-                <button
-                  className="btn-play-pause"
-                  onClick={togglePlay}
-                >
-                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                </button>
-
-                <span className="player-time">{formatTime(currentTime)}</span>
-
-                <div
-                  className="player-seek-track"
-                  onClick={(e) => {
-                    if (videoOrigRef.current && videoCompRef.current && duration > 0) {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const clickX = e.clientX - rect.left;
-                      const newTime = (clickX / rect.width) * duration;
-                      videoOrigRef.current.currentTime = newTime;
-                      videoCompRef.current.currentTime = newTime;
-                      setCurrentTime(newTime);
-                    }
-                  }}
-                >
                   <div
-                    className="player-seek-fill"
-                    style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
-                  />
+                    className="player-seek-track"
+                    onClick={(e) => {
+                      if (videoOrigRef.current && videoCompRef.current && duration > 0) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const newTime = (clickX / rect.width) * duration;
+                        videoOrigRef.current.currentTime = newTime;
+                        videoCompRef.current.currentTime = newTime;
+                        setCurrentTime(newTime);
+                      }
+                    }}
+                  >
+                    <div
+                      className="player-seek-fill"
+                      style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+                    />
+                  </div>
+
+                  <span className="player-time">{formatTime(duration)}</span>
+
+                  <Volume2 size={16} style={{ color: '#64748B', cursor: 'pointer' }} />
+                  <Maximize2 size={15} style={{ color: '#64748B', cursor: 'pointer' }} />
                 </div>
-
-                <span className="player-time">{formatTime(duration)}</span>
-
-                <Volume2 size={16} style={{ color: '#64748B', cursor: 'pointer' }} />
-                <Maximize2 size={15} style={{ color: '#64748B', cursor: 'pointer' }} />
-              </div>
-            </>
-          )}
-        </section>
-      </main>
+              </>
+            )}
+          </section>
+        </main>
+      )}
 
       {/* Mobile Sticky Bar */}
       <div className="mobile-sticky-bar">
-        {mobileStep === 1 || !customVideoUrl ? (
-          <button
-            className="mobile-action-btn primary"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <UploadCloud size={20} />
-            <span>Step 1: Select Video File</span>
-          </button>
-        ) : isCompressing ? (
-          <button className="mobile-action-btn processing" disabled>
-            <RotateCw size={20} className="animate-spin-fast" />
-            <span>Step 3: {jobStatusText} ({compressProgress}%)...</span>
-          </button>
-        ) : compressDone ? (
-          <button
-            className="mobile-action-btn success"
-            onClick={handleDownloadCompressed}
-          >
-            <Sparkles size={20} />
-            <span>Step 3: Download Encoded MP4 ({calculatedReducedSizeMB}MB)</span>
-          </button>
+        {appMode === 'image' ? (
+          mobileStep === 1 || !originalImageUrl ? (
+            <button
+              className="mobile-action-btn primary"
+              onClick={() => imageFileInputRef.current?.click()}
+            >
+              <ImageIcon size={20} />
+              <span>Step 1: Select Image File</span>
+            </button>
+          ) : isConvertingImage ? (
+            <button className="mobile-action-btn processing" disabled>
+              <RotateCw size={20} className="animate-spin-fast" />
+              <span>Converting Image to {targetFormat.toUpperCase()}...</span>
+            </button>
+          ) : imageConvertDone ? (
+            <button
+              className="mobile-action-btn success"
+              onClick={handleDownloadConvertedImage}
+            >
+              <Download size={20} />
+              <span>Download {targetFormat.toUpperCase()} ({imageConvertedFormatted})</span>
+            </button>
+          ) : (
+            <button
+              className="mobile-action-btn compress-now"
+              onClick={handleStartImageConversion}
+            >
+              <Zap size={20} />
+              <span>Convert to {targetFormat.toUpperCase()} Now</span>
+            </button>
+          )
         ) : (
-          <button
-            className="mobile-action-btn compress-now"
-            onClick={handleStartCompression}
-          >
-            <Zap size={20} />
-            <span>Step 2: Compress Video Now</span>
-          </button>
+          mobileStep === 1 || !customVideoUrl ? (
+            <button
+              className="mobile-action-btn primary"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <UploadCloud size={20} />
+              <span>Step 1: Select Video File</span>
+            </button>
+          ) : isCompressing ? (
+            <button className="mobile-action-btn processing" disabled>
+              <RotateCw size={20} className="animate-spin-fast" />
+              <span>Step 3: {jobStatusText} ({compressProgress}%)...</span>
+            </button>
+          ) : compressDone ? (
+            <button
+              className="mobile-action-btn success"
+              onClick={handleDownloadCompressed}
+            >
+              <Sparkles size={20} />
+              <span>Step 3: Download Encoded MP4 ({calculatedReducedSizeMB}MB)</span>
+            </button>
+          ) : (
+            <button
+              className="mobile-action-btn compress-now"
+              onClick={handleStartCompression}
+            >
+              <Zap size={20} />
+              <span>Step 2: Compress Video Now</span>
+            </button>
+          )
         )}
       </div>
     </div>

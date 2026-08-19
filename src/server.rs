@@ -1,4 +1,5 @@
 use crate::encode::{self, EncodeRequest};
+use crate::image_convert::{self, ImageConvertRequest, ImageFormatType};
 use crate::preset::{Codec, Quality};
 use crate::probe::{self, VideoInfo};
 use anyhow::Result;
@@ -198,6 +199,7 @@ pub async fn start_server(port: u16) -> anyhow::Result<()> {
         .route("/api/stats", get(handle_get_stats))
         .route("/api/admin/login", post(handle_admin_login))
         .route("/api/compress", post(handle_compress))
+        .route("/api/convert-image", post(handle_convert_image))
         .route("/api/jobs/:job_id", get(handle_job_status))
         .route("/api/downloads/:filename", get(handle_download))
         .layer(DefaultBodyLimit::max(200 * 1024 * 1024)) // 200 MB max body limit
@@ -608,6 +610,208 @@ async fn process_single_job(ctx: AppContext, payload: JobPayload) {
     }
 }
 
+#[derive(Serialize)]
+pub struct ImageConvertResponse {
+    pub success: bool,
+    pub original_filename: String,
+    pub output_filename: String,
+    pub converted_url: String,
+    pub original_size_bytes: u64,
+    pub converted_size_bytes: u64,
+    pub reduction_pct: f64,
+    pub width: u32,
+    pub height: u32,
+    pub original_format: String,
+    pub target_format: String,
+}
+
+async fn handle_convert_image(
+    mut multipart: axum::extract::Multipart,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let job_id = Uuid::new_v4().to_string();
+    let temp_dir = std::env::temp_dir();
+    let mut file_name = "image.png".to_string();
+    let mut target_format_str = "png".to_string();
+    let mut quality: Option<u8> = Some(85);
+    let mut target_w: Option<u32> = None;
+    let mut target_h: Option<u32> = None;
+    let mut keep_aspect_ratio: bool = true;
+
+    let mut input_path = temp_dir.join(format!("img_in_{}.png", job_id));
+    let mut file_writer: Option<File> = None;
+
+    while let Ok(Some(mut field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        if name == "file" {
+            if let Some(filename) = field.file_name() {
+                file_name = filename.to_string();
+                let ext = PathBuf::from(&file_name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("png")
+                    .to_string();
+                input_path = temp_dir.join(format!("img_in_{}.{}", job_id, ext));
+            }
+            if file_writer.is_none() {
+                match File::create(&input_path).await {
+                    Ok(f) => file_writer = Some(f),
+                    Err(e) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to create temporary image file on disk: {e}"),
+                        )
+                            .into_response();
+                    }
+                }
+            }
+            let writer = file_writer.as_mut().unwrap();
+            let mut total_bytes: u64 = 0;
+            const MAX_IMAGE_SIZE_BYTES: u64 = 100 * 1024 * 1024; // 100 MB limit
+
+            while let Ok(Some(chunk)) = field.chunk().await {
+                total_bytes += chunk.len() as u64;
+                if total_bytes > MAX_IMAGE_SIZE_BYTES {
+                    let _ = tokio::fs::remove_file(&input_path).await;
+                    return (
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "Image size exceeds maximum limit of 100MB",
+                    )
+                        .into_response();
+                }
+                if let Err(e) = writer.write_all(&chunk).await {
+                    let _ = tokio::fs::remove_file(&input_path).await;
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed streaming image chunk: {e}"),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            if let Ok(bytes) = field.bytes().await {
+                if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+                    match name.as_str() {
+                        "format" | "target_format" => target_format_str = text.trim().to_lowercase(),
+                        "quality" => {
+                            if let Ok(val) = text.parse::<u8>() {
+                                quality = Some(val.clamp(1, 100));
+                            }
+                        }
+                        "width" => {
+                            if let Ok(val) = text.parse::<u32>() {
+                                if val > 0 { target_w = Some(val); }
+                            }
+                        }
+                        "height" => {
+                            if let Ok(val) = text.parse::<u32>() {
+                                if val > 0 { target_h = Some(val); }
+                            }
+                        }
+                        "keepAspectRatio" => {
+                            keep_aspect_ratio = text.parse::<bool>().unwrap_or(true);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(mut writer) = file_writer {
+        let _ = writer.flush().await;
+        drop(writer);
+    } else {
+        return (StatusCode::BAD_REQUEST, "No image file uploaded").into_response();
+    }
+
+    let target_fmt = ImageFormatType::from_str_lenient(&target_format_str);
+    let original_stem = PathBuf::from(&file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image")
+        .to_string();
+
+    let output_filename = format!("converted_{}_{}.{}", job_id, original_stem, target_fmt.extension());
+    let output_path = temp_dir.join(&output_filename);
+
+    let input_meta = image_convert::probe_image(&input_path).unwrap_or(image_convert::ImageMeta {
+        width: 0,
+        height: 0,
+        format: "unknown".into(),
+        size_bytes: 0,
+    });
+
+    let req = ImageConvertRequest {
+        input_path: input_path.clone(),
+        output_path: output_path.clone(),
+        target_format: target_fmt,
+        quality,
+        target_width: target_w,
+        target_height: target_h,
+        keep_aspect_ratio,
+    };
+
+    let convert_res = tokio::task::spawn_blocking(move || image_convert::convert_image(&req))
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("Spawn blocking join error: {e}")));
+
+    let _ = tokio::fs::remove_file(&input_path).await;
+
+    match convert_res {
+        Ok(()) => {
+            let output_meta = image_convert::probe_image(&output_path).unwrap_or(image_convert::ImageMeta {
+                width: input_meta.width,
+                height: input_meta.height,
+                format: target_fmt.extension().into(),
+                size_bytes: 0,
+            });
+
+            let original_size = if input_meta.size_bytes > 0 {
+                input_meta.size_bytes
+            } else {
+                1
+            };
+
+            let converted_size = tokio::fs::metadata(&output_path)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(output_meta.size_bytes.max(1));
+
+            let reduction_pct = 100.0 * (1.0 - (converted_size as f64 / original_size as f64));
+
+            let comp_count = VIDEOS_COMPRESSED.fetch_add(1, Ordering::SeqCst) + 1;
+            let view_count = PAGE_VIEWS.load(Ordering::SeqCst);
+            save_persistent_stats(view_count, comp_count);
+
+            axum::Json(ImageConvertResponse {
+                success: true,
+                original_filename: file_name,
+                output_filename: output_filename.clone(),
+                converted_url: format!("/api/downloads/{}", output_filename),
+                original_size_bytes: original_size,
+                converted_size_bytes: converted_size,
+                reduction_pct,
+                width: if output_meta.width > 0 { output_meta.width } else { input_meta.width },
+                height: if output_meta.height > 0 { output_meta.height } else { input_meta.height },
+                original_format: input_meta.format,
+                target_format: target_fmt.extension().to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&output_path).await;
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Image conversion failed: {e}"),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn handle_download(axum::extract::Path(filename): axum::extract::Path<String>) -> axum::response::Response {
     use axum::http::{header, HeaderValue, StatusCode};
     use axum::response::IntoResponse;
@@ -622,9 +826,31 @@ async fn handle_download(axum::extract::Path(filename): axum::extract::Path<Stri
     match std::fs::read(&file_path) {
         Ok(data) => {
             let mut response = axum::response::Response::new(axum::body::Body::from(data));
+            let content_type = if filename.ends_with(".png") {
+                "image/png"
+            } else if filename.ends_with(".jpg") || filename.ends_with(".jpeg") {
+                "image/jpeg"
+            } else if filename.ends_with(".webp") {
+                "image/webp"
+            } else if filename.ends_with(".gif") {
+                "image/gif"
+            } else if filename.ends_with(".bmp") {
+                "image/bmp"
+            } else if filename.ends_with(".tiff") || filename.ends_with(".tif") {
+                "image/tiff"
+            } else if filename.ends_with(".ico") {
+                "image/x-icon"
+            } else if filename.ends_with(".avif") {
+                "image/avif"
+            } else if filename.ends_with(".svg") {
+                "image/svg+xml"
+            } else {
+                "video/mp4"
+            };
+
             response.headers_mut().insert(
                 header::CONTENT_TYPE,
-                HeaderValue::from_static("video/mp4"),
+                HeaderValue::from_static(content_type),
             );
             response.headers_mut().insert(
                 header::CONTENT_DISPOSITION,

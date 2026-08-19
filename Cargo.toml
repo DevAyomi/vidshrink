@@ -23,6 +23,9 @@ redis = { version = "0.24", features = ["tokio-comp", "aio"] }
 deadpool-redis = "0.14"
 futures-util = "0.3"
 uuid = { version = "1.6", features = ["v4"] }
+image = { version = "0.24", default-features = true }
+webp = "0.3"
+resvg = "0.44"
 
 [profile.release]
 opt-level = 3
