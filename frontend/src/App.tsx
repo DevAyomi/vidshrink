@@ -297,7 +297,7 @@ export function App() {
     setMobileStep(1);
   };
 
-  const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB limit
+  const MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024; // 60 MB limit
 
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith('video/')) {
@@ -311,7 +311,7 @@ export function App() {
       return;
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      alert(`File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the maximum allowed limit of 200 MB.`);
+      alert(`File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the maximum allowed limit of 60 MB.`);
       return;
     }
     sessionStorage.removeItem('vidshrink_saved_result');
@@ -1542,7 +1542,7 @@ export function App() {
                 </div>
                 <div className="upload-headline">Upload your video to compress</div>
                 <div className="upload-subtext">
-                  Upload video files up to 200 MB. Files stream safely to disk in chunks.
+                  Upload video files up to 60 MB. Files stream safely to disk in chunks.
                 </div>
 
                 <div className="dropzone-credibility-bar">

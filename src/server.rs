@@ -387,7 +387,7 @@ async fn handle_compress(
             }
             let writer = file_writer.as_mut().unwrap();
             let mut total_bytes: u64 = 0;
-            const MAX_FILE_SIZE_BYTES: u64 = 200 * 1024 * 1024; // 200 MB limit
+            const MAX_FILE_SIZE_BYTES: u64 = 60 * 1024 * 1024; // 60 MB limit
 
             while let Ok(Some(chunk)) = field.chunk().await {
                 total_bytes += chunk.len() as u64;
@@ -395,7 +395,7 @@ async fn handle_compress(
                     let _ = tokio::fs::remove_file(&input_path).await;
                     return (
                         StatusCode::PAYLOAD_TOO_LARGE,
-                        "File size exceeds maximum limit of 200MB",
+                        "File size exceeds maximum limit of 60MB",
                     )
                         .into_response();
                 }
